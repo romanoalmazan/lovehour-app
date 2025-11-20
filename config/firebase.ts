@@ -24,49 +24,27 @@ const auth = getAuth(app);
 // Initialize Firestore
 const db = getFirestore(app);
 
-// Promise to track when Firestore is ready
-let firestoreReadyPromise: Promise<void> | null = null;
+// Track if Firestore network has been enabled
+let firestoreNetworkEnabled = false;
 
 /**
- * Initialize and wait for Firestore to be ready
+ * Ensure Firestore network is enabled (safe to call multiple times)
  */
-const initializeFirestore = async (): Promise<void> => {
-  if (firestoreReadyPromise) {
-    return firestoreReadyPromise;
+const ensureFirestoreNetwork = async (): Promise<void> => {
+  if (firestoreNetworkEnabled) {
+    return; // Already enabled
   }
 
-  firestoreReadyPromise = (async () => {
-    try {
-      // Enable network
-      await enableNetwork(db);
-      console.log('Firestore network enabled');
-      
-      // Wait a bit for connection to establish
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Try a test operation to verify connection
-      // We'll do this in userService instead to avoid circular dependencies
-      console.log('Firestore initialization complete');
-    } catch (error) {
-      console.error('Firestore initialization error:', error);
-      // Retry after delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      try {
-        await enableNetwork(db);
-        console.log('Firestore network enabled on retry');
-      } catch (retryError) {
-        console.error('Firestore network enable retry failed:', retryError);
-        throw retryError;
-      }
-    }
-  })();
-
-  return firestoreReadyPromise;
+  try {
+    await enableNetwork(db);
+    firestoreNetworkEnabled = true;
+    console.log('Firestore network enabled');
+  } catch (error) {
+    console.error('Failed to enable Firestore network:', error);
+    throw error;
+  }
 };
 
-// Start initialization immediately
-initializeFirestore().catch(console.error);
-
-export { auth, db, initializeFirestore };
+export { auth, db, ensureFirestoreNetwork };
 export default app;
 

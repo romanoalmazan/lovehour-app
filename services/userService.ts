@@ -1,57 +1,26 @@
-import { 
-  doc, 
-  getDoc, 
+import {
+  doc,
+  getDoc,
   getDocFromCache,
-  setDoc, 
-  updateDoc, 
-  query, 
-  where, 
-  getDocs, 
+  setDoc,
+  updateDoc,
+  query,
+  where,
+  getDocs,
   collection,
   serverTimestamp,
   onSnapshot,
-  enableNetwork
+  enableNetwork,
+  runTransaction
 } from 'firebase/firestore';
-import { db, initializeFirestore } from '../config/firebase';
+import { db, ensureFirestoreNetwork } from '../config/firebase';
 import { generateFriendCode } from '../utils/friendCodeGenerator';
 
 /**
- * Wait for Firestore to be ready and online
- * This is critical for React Native where Firestore can report offline incorrectly
+ * Ensure Firestore is ready for operations
  */
-const waitForFirestoreReady = async (maxRetries: number = 5): Promise<void> => {
-  // First, ensure Firestore is initialized
-  await initializeFirestore();
-  
-  // Wait for network to be enabled and connection established
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      // Enable network
-      await enableNetwork(db);
-      
-      // Wait progressively longer with each retry to allow connection to establish
-      const waitTime = Math.min(500 * (attempt + 1), 2000);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-      
-      // If we get here without error, network should be enabled
-      // The actual query will tell us if we're truly connected
-      if (attempt === 0) {
-        console.log('Firestore network enabled, ready for queries');
-      } else {
-        console.log(`Firestore network enabled after ${attempt + 1} attempts`);
-      }
-      return;
-    } catch (error) {
-      console.warn(`Firestore ready check attempt ${attempt + 1} failed:`, error);
-      if (attempt < maxRetries - 1) {
-        // Exponential backoff
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
-      }
-    }
-  }
-  
-  // If we get here, we couldn't enable network but proceed anyway
-  console.warn('Could not fully enable Firestore network, proceeding anyway');
+const ensureFirestoreReady = async (): Promise<void> => {
+  await ensureFirestoreNetwork();
 };
 
 export interface UserData {
@@ -60,6 +29,8 @@ export interface UserData {
   createdAt: any;
   email?: string;
   displayName?: string;
+  fullName?: string;
+  gender?: 'male' | 'female' | 'other';
 }
 
 /**
@@ -68,9 +39,9 @@ export interface UserData {
  */
 export const getUserData = async (uid: string): Promise<UserData | null> => {
   const userRef = doc(db, 'users', uid);
-  
+
   // Wait for Firestore to be ready and connected
-  await waitForFirestoreReady();
+  await ensureFirestoreReady();
   
   try {
     // Try to get from server first
@@ -118,9 +89,9 @@ export const getUserData = async (uid: string): Promise<UserData | null> => {
     if (error.code === 'unavailable' || error.message?.includes('offline')) {
       console.log('Offline detected, waiting for Firestore connection and retrying...');
       
-      // Wait for Firestore to be ready with more retries
-      try {
-        await waitForFirestoreReady(10); // More retries for this case
+        // Wait for Firestore to be ready with more retries
+        try {
+          await ensureFirestoreReady();
         
         // Retry the query
         const retrySnap = await getDoc(userRef);
@@ -174,29 +145,35 @@ const generateUniqueFriendCode = async (): Promise<string> => {
 
   while (attempts < maxAttempts) {
     try {
-      const codeQuery = query(
-        collection(db, 'users'),
-        where('friendCode', '==', code)
-      );
-      const querySnapshot = await getDocs(codeQuery);
-
-      if (querySnapshot.empty) {
-        return code;
+      const existingUser = await findUserByFriendCode(code);
+      if (!existingUser) {
+        return code; // Code is unique
       }
     } catch (error: any) {
-      // If offline, we can't check uniqueness, so generate a more unique code
+      console.warn(`Error checking code uniqueness for ${code}:`, error);
+
+      // If offline or network error, we can't guarantee uniqueness
+      // Generate a more unique code using timestamp
       if (error.code === 'unavailable' || error.message?.includes('offline')) {
         console.warn('Offline: generating code with timestamp for uniqueness');
         return code + Date.now().toString().slice(-4);
       }
-      // For other errors, continue trying
+
+      // For permission errors, we can't check uniqueness
+      if (error.code === 'permission-denied') {
+        console.warn('Permission denied checking code uniqueness, using timestamp fallback');
+        return code + Date.now().toString().slice(-4);
+      }
+
+      // For other errors, continue trying with a new code
     }
 
     code = generateFriendCode();
     attempts++;
   }
 
-  // Fallback: append timestamp if we can't find unique code
+  // Fallback: append timestamp if we can't find unique code after max attempts
+  console.warn(`Could not generate unique code after ${maxAttempts} attempts, using timestamp fallback`);
   return code + Date.now().toString().slice(-2);
 };
 
@@ -214,102 +191,234 @@ export const checkMatchStatus = async (uid: string): Promise<boolean> => {
 };
 
 /**
- * Find user by friend code
+ * Verify that a match is mutual and valid
  */
-export const findUserByFriendCode = async (friendCode: string): Promise<string | null> => {
-  // Wait for Firestore to be ready
-  await waitForFirestoreReady();
-  
+export const verifyMutualMatch = async (uid: string): Promise<{ isValid: boolean; partnerData?: UserData; reason?: string }> => {
   try {
-    const codeQuery = query(
-      collection(db, 'users'),
-      where('friendCode', '==', friendCode.toUpperCase())
-    );
-    const querySnapshot = await getDocs(codeQuery);
+    const userData = await getUserData(uid);
 
-    if (querySnapshot.empty) {
-      return null;
+    if (!userData?.matchedWith) {
+      return { isValid: false, reason: 'User is not matched' };
     }
 
-    return querySnapshot.docs[0].id; // Return the UID
-  } catch (error: any) {
-    console.error('Error finding user by friend code:', error);
-    
-    // If offline, wait and retry once
-    if (error.code === 'unavailable' || error.message?.includes('offline')) {
-      try {
-        await waitForFirestoreReady(5);
-        const codeQuery = query(
-          collection(db, 'users'),
-          where('friendCode', '==', friendCode.toUpperCase())
-        );
-        const querySnapshot = await getDocs(codeQuery);
-        if (!querySnapshot.empty) {
-          return querySnapshot.docs[0].id;
-        }
-      } catch (retryError) {
-        console.error('Retry failed:', retryError);
-      }
+    const partnerData = await getUserData(userData.matchedWith);
+
+    if (!partnerData) {
+      return { isValid: false, reason: 'Partner data not found' };
     }
-    
-    return null;
+
+    // Check if partner also has this user as matchedWith
+    if (partnerData.matchedWith !== uid) {
+      return { isValid: false, reason: 'Match is not mutual' };
+    }
+
+    return { isValid: true, partnerData };
+  } catch (error) {
+    console.error('Error verifying mutual match:', error);
+    return { isValid: false, reason: 'Error verifying match' };
   }
 };
 
 /**
- * Match two users by friend codes
+ * Unmatch users (for cases where match becomes invalid)
+ */
+export const unmatchUsers = async (currentUserId: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    await ensureFirestoreReady();
+
+    const verification = await verifyMutualMatch(currentUserId);
+
+    if (!verification.isValid) {
+      return { success: false, message: verification.reason || 'Match is not valid' };
+    }
+
+    const partnerId = verification.partnerData?.matchedWith;
+    if (!partnerId) {
+      return { success: false, message: 'Partner ID not found' };
+    }
+
+    // Use transaction to unmatch both users atomically
+    await runTransaction(db, async (transaction) => {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      const partnerUserRef = doc(db, 'users', partnerId);
+
+      transaction.update(currentUserRef, { matchedWith: null });
+      transaction.update(partnerUserRef, { matchedWith: null });
+    });
+
+    return { success: true, message: 'Successfully unmatched' };
+  } catch (error: any) {
+    console.error('Error unmatching users:', error);
+    return { success: false, message: error.message || 'Failed to unmatch' };
+  }
+};
+
+/**
+ * Find user by friend code with retry logic
+ */
+export const findUserByFriendCode = async (friendCode: string): Promise<string | null> => {
+  const normalizedCode = friendCode.toUpperCase();
+
+  // Wait for Firestore to be ready
+  await ensureFirestoreReady();
+
+  let lastError: any = null;
+
+  // Try up to 3 times with exponential backoff
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const codeQuery = query(
+        collection(db, 'users'),
+        where('friendCode', '==', normalizedCode)
+      );
+      const querySnapshot = await getDocs(codeQuery);
+
+      if (querySnapshot.empty) {
+        return null; // Code doesn't exist, not an error
+      }
+
+      // Validate that we got exactly one result
+      if (querySnapshot.docs.length > 1) {
+        console.warn(`Multiple users found with friend code ${normalizedCode}. This should not happen.`);
+        // Return the first one, but this indicates a data integrity issue
+      }
+
+      return querySnapshot.docs[0].id; // Return the UID
+    } catch (error: any) {
+      console.error(`Error finding user by friend code (attempt ${attempt + 1}):`, error);
+      lastError = error;
+
+      // If it's a network error, wait and retry
+      if (error.code === 'unavailable' || error.message?.includes('offline')) {
+        if (attempt < 2) { // Don't wait after the last attempt
+          const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000); // Exponential backoff, max 5s
+          console.log(`Network error, retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          await ensureFirestoreReady(); // Re-establish connection
+        }
+      } else {
+        // For non-network errors (like permission denied), don't retry
+        break;
+      }
+    }
+  }
+
+  // If we get here, all retries failed
+  console.error('Failed to find user by friend code after all retries:', lastError);
+  return null;
+};
+
+/**
+ * Match two users by friend codes using a Firestore transaction for atomicity
  */
 export const matchUsers = async (currentUserId: string, partnerFriendCode: string): Promise<{ success: boolean; message: string }> => {
   try {
-    // Get current user data
-    const currentUserData = await getUserData(currentUserId);
-    
-    if (!currentUserData) {
-      return { success: false, message: 'User data not found' };
+    // Wait for Firestore to be ready
+    await ensureFirestoreReady();
+
+    // Find partner by friend code first
+    const partnerUserId = await findUserByFriendCode(partnerFriendCode);
+
+    if (!partnerUserId) {
+      return { success: false, message: 'Invalid friend code. Please check the code and try again.' };
     }
 
-    // Check if current user is already matched
-    if (currentUserData.matchedWith) {
-      return { success: false, message: 'You are already matched with someone' };
-    }
-
-    // Check if user is trying to match with themselves
-    if (currentUserData.friendCode.toUpperCase() === partnerFriendCode.toUpperCase()) {
+    if (partnerUserId === currentUserId) {
       return { success: false, message: 'You cannot match with yourself' };
     }
 
-    // Find partner by friend code
-    const partnerUserId = await findUserByFriendCode(partnerFriendCode);
-    
-    if (!partnerUserId) {
-      return { success: false, message: 'Invalid friend code' };
-    }
+    // Use transaction to ensure atomic matching
+    const result = await runTransaction(db, async (transaction) => {
+      // Get both user documents
+      const currentUserRef = doc(db, 'users', currentUserId);
+      const partnerUserRef = doc(db, 'users', partnerUserId);
 
-    // Get partner data
-    const partnerUserData = await getUserData(partnerUserId);
-    
-    if (!partnerUserData) {
-      return { success: false, message: 'Partner user data not found' };
-    }
+      const [currentUserSnap, partnerUserSnap] = await Promise.all([
+        transaction.get(currentUserRef),
+        transaction.get(partnerUserRef)
+      ]);
 
-    // Check if partner is already matched
-    if (partnerUserData.matchedWith) {
-      return { success: false, message: 'This user is already matched with someone else' };
-    }
+      // Check if documents exist
+      if (!currentUserSnap.exists()) {
+        throw new Error('Your user data was not found. Please try logging out and back in.');
+      }
 
-    // Create bidirectional match
-    const currentUserRef = doc(db, 'users', currentUserId);
-    const partnerUserRef = doc(db, 'users', partnerUserId);
+      if (!partnerUserSnap.exists()) {
+        throw new Error('Partner user data not found. The friend code may be invalid.');
+      }
 
-    await Promise.all([
-      updateDoc(currentUserRef, { matchedWith: partnerUserId }),
-      updateDoc(partnerUserRef, { matchedWith: currentUserId }),
-    ]);
+      const currentUserData = currentUserSnap.data() as UserData;
+      const partnerUserData = partnerUserSnap.data() as UserData;
 
-    return { success: true, message: 'Successfully matched!' };
+      // Check if current user is already matched
+      if (currentUserData.matchedWith) {
+        throw new Error('You are already matched with someone. Please unmatch first if you want to match with someone else.');
+      }
+
+      // Check if partner is already matched
+      if (partnerUserData.matchedWith) {
+        throw new Error('This user is already matched with someone else. Please try a different friend code.');
+      }
+
+      // Check if user is trying to match with themselves (double check)
+      if (currentUserData.friendCode.toUpperCase() === partnerFriendCode.toUpperCase()) {
+        throw new Error('You cannot match with yourself');
+      }
+
+      // Perform the mutual match
+      transaction.update(currentUserRef, { matchedWith: partnerUserId });
+      transaction.update(partnerUserRef, { matchedWith: currentUserId });
+
+      return { success: true, message: 'Successfully matched! You can now start your Love Hour together.' };
+    });
+
+    return result;
   } catch (error: any) {
     console.error('Error matching users:', error);
-    return { success: false, message: error.message || 'Failed to match users' };
+
+    // Handle specific transaction errors
+    if (error.code === 'unavailable' || error.message?.includes('offline')) {
+      return { success: false, message: 'Network connection lost. Please check your internet connection and try again.' };
+    }
+
+    if (error.code === 'permission-denied') {
+      return { success: false, message: 'Permission denied. Please check Firestore security rules.' };
+    }
+
+    // Return the error message or a generic one
+    return { success: false, message: error.message || 'Failed to match with partner. Please try again.' };
+  }
+};
+
+/**
+ * Create a complete user profile with friend code after sign-up
+ */
+export const createUserProfile = async (
+  uid: string,
+  profileData: { fullName: string; gender: 'male' | 'female' | 'other' }
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    await ensureFirestoreReady();
+
+    // Generate a unique friend code
+    const friendCode = await generateUniqueFriendCode();
+
+    // Create the complete user document
+    const userRef = doc(db, 'users', uid);
+    const userData: UserData = {
+      friendCode,
+      matchedWith: null,
+      createdAt: serverTimestamp(),
+      fullName: profileData.fullName,
+      gender: profileData.gender,
+    };
+
+    await setDoc(userRef, userData);
+
+    return { success: true, message: 'Profile created successfully!' };
+  } catch (error: any) {
+    console.error('Error creating user profile:', error);
+    return { success: false, message: error.message || 'Failed to create profile' };
   }
 };
 
@@ -321,7 +430,7 @@ export const subscribeToUserData = (
   callback: (userData: UserData | null) => void
 ): (() => void) => {
   const userRef = doc(db, 'users', uid);
-  
+
   return onSnapshot(userRef, (snapshot) => {
     if (snapshot.exists()) {
       callback(snapshot.data() as UserData);

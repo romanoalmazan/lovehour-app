@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserData, matchUsers } from '../services/userService';
+import { sanitizeFriendCode } from '../utils/friendCodeGenerator';
 
 const ChoosePartnerScreen: React.FC = () => {
   const { user } = useAuth();
@@ -20,6 +21,7 @@ const ChoosePartnerScreen: React.FC = () => {
   const [partnerCode, setPartnerCode] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [matching, setMatching] = useState(false);
+  const [inputError, setInputError] = useState<string>('');
 
   useEffect(() => {
     loadUserData();
@@ -51,8 +53,10 @@ const ChoosePartnerScreen: React.FC = () => {
   };
 
   const handleMatch = async () => {
-    if (!partnerCode.trim()) {
-      Alert.alert('Error', 'Please enter a friend code');
+    const sanitized = sanitizeFriendCode(partnerCode);
+
+    if (!sanitized.isValid) {
+      setInputError(sanitized.error || 'Invalid friend code');
       return;
     }
 
@@ -62,9 +66,11 @@ const ChoosePartnerScreen: React.FC = () => {
     }
 
     setMatching(true);
+    setInputError(''); // Clear any previous errors
+
     try {
-      const result = await matchUsers(user.uid, partnerCode.trim());
-      
+      const result = await matchUsers(user.uid, sanitized.code);
+
       if (result.success) {
         Alert.alert('Success', result.message);
         // Navigation will be handled automatically by App.tsx based on match status change
@@ -122,18 +128,26 @@ const ChoosePartnerScreen: React.FC = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Enter Partner's Code</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, inputError ? styles.inputError : null]}
               value={partnerCode}
-              onChangeText={setPartnerCode}
-              placeholder="Enter friend code"
+              onChangeText={(text) => {
+                const sanitized = sanitizeFriendCode(text);
+                setPartnerCode(sanitized.code);
+                // Clear error when user fixes the input
+                if (inputError && sanitized.isValid) setInputError('');
+              }}
+              placeholder="Enter 6-character friend code"
               placeholderTextColor="#999"
               autoCapitalize="characters"
-              maxLength={10}
+              maxLength={6}
+              autoCorrect={false}
+              spellCheck={false}
             />
+            {inputError ? <Text style={styles.errorText}>{inputError}</Text> : null}
             <TouchableOpacity
-              style={[styles.matchButton, matching && styles.matchButtonDisabled]}
+              style={[styles.matchButton, (matching || !!inputError) && styles.matchButtonDisabled]}
               onPress={handleMatch}
-              disabled={matching}
+              disabled={matching || !!inputError}
             >
               {matching ? (
                 <ActivityIndicator color="#fff" />
@@ -225,6 +239,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 2,
     fontWeight: '600',
+  },
+  inputError: {
+    borderColor: '#ff3b30',
+  },
+  errorText: {
+    color: '#ff3b30',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+    marginTop: -12,
   },
   matchButton: {
     width: '100%',

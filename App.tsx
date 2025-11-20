@@ -8,28 +8,34 @@ import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import ChoosePartnerScreen from './screens/ChoosePartnerScreen';
 import LoveHourScreen from './screens/LoveHourScreen';
+import UserProfileSetupScreen from './screens/UserProfileSetupScreen';
 import { checkMatchStatus, subscribeToUserData } from './services/userService';
 
 const Stack = createNativeStackNavigator();
 
 const AppNavigator: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, profileComplete } = useAuth();
   const [isMatched, setIsMatched] = useState<boolean | null>(null);
   const [checkingMatch, setCheckingMatch] = useState(true);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!user) {
       setIsMatched(null);
       setCheckingMatch(false);
+      setHasProfile(null);
       return;
     }
 
-    // Subscribe to user data changes to detect match status
+    // Subscribe to user data changes to detect match status and profile completeness
     const unsubscribe = subscribeToUserData(user.uid, (userData) => {
       if (userData) {
         setIsMatched(userData.matchedWith !== null && userData.matchedWith !== undefined);
+        // Profile is complete if friendCode AND fullName AND gender exist
+        setHasProfile(!!(userData.friendCode && userData.fullName && userData.gender));
       } else {
         setIsMatched(false);
+        setHasProfile(false);
       }
       setCheckingMatch(false);
     });
@@ -50,7 +56,9 @@ const AppNavigator: React.FC = () => {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>
-            {isMatched ? (
+            {hasProfile === false ? (
+              <Stack.Screen name="UserProfileSetup" component={UserProfileSetupScreen} />
+            ) : isMatched ? (
               <Stack.Screen name="LoveHour" component={LoveHourScreen} />
             ) : (
               <>
