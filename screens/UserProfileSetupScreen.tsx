@@ -16,7 +16,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { createUserProfile } from '../services/userService';
 
-// Define types locally to avoid import issues
 type RootStackParamList = {
   Home: undefined;
   Auth: undefined;
@@ -64,7 +63,7 @@ const UserProfileSetupScreen: React.FC = () => {
       });
 
       if (result.success) {
-        markProfileComplete(); // Mark profile as complete in context
+        markProfileComplete();
         Alert.alert('Success', 'Profile created successfully!', [
           { text: 'Continue', onPress: () => navigation.navigate('Home') }
         ]);
