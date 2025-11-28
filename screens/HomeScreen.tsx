@@ -101,7 +101,7 @@ const HomeScreen: React.FC = () => {
       <View style={styles.container}>
         <View style={styles.content}>
           <Text style={styles.greeting}>Verifying your match...</Text>
-          <ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
+          <ActivityIndicator size="large" color="#D4A574" style={styles.loader} />
         </View>
       </View>
     );
@@ -151,10 +151,11 @@ const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffe6d5',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
+    paddingTop: 60,
   },
   content: {
     alignItems: 'center',
@@ -163,32 +164,47 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   greeting: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 42,
+    fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 40,
-    color: '#333',
+    marginBottom: 8,
+    color: '#8B6F47',
+    letterSpacing: 1,
   },
   loader: {
     marginTop: 20,
+    color: '#D4A574',
   },
   matchInfo: {
     alignItems: 'center',
     marginBottom: 30,
+    width: '100%',
+    maxWidth: 300,
   },
   matchText: {
-    fontSize: 18,
-    color: '#007AFF',
+    fontSize: 20,
+    color: '#6B5B4A',
     marginBottom: 20,
     textAlign: 'center',
+    fontWeight: '600',
   },
   unmatchButton: {
     backgroundColor: '#ff3b30',
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#d32f2f',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
   },
   unmatchButtonDisabled: {
     opacity: 0.6,
@@ -196,45 +212,56 @@ const styles = StyleSheet.create({
   unmatchButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   choosePartnerButton: {
     width: '100%',
     maxWidth: 300,
-    paddingVertical: 20,
+    paddingVertical: 16,
     paddingHorizontal: 30,
-    borderRadius: 8,
-    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: '#8B6F47',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     elevation: 5,
   },
   choosePartnerText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   signOutButton: {
     position: 'absolute',
     bottom: 40,
     paddingHorizontal: 30,
     paddingVertical: 15,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   signOutText: {
-    color: '#007AFF',
+    color: '#8B6F47',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
 

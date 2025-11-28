@@ -92,7 +92,7 @@ const ChoosePartnerScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#D4A574" />
       </View>
     );
   }
@@ -165,73 +165,97 @@ const ChoosePartnerScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffe6d5',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#ffe6d5',
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
+    padding: 24,
+    paddingTop: 60,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
   },
   title: {
-    fontSize: 28,
+    fontSize: 42,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#8B6F47',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 8,
+    letterSpacing: 1,
   },
   section: {
     marginBottom: 30,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    color: '#6B5B4A',
+    marginBottom: 8,
+    marginLeft: 4,
   },
   codeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
     padding: 16,
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   codeText: {
     flex: 1,
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#8B6F47',
     letterSpacing: 2,
   },
   copyButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#007AFF',
-    borderRadius: 6,
+    paddingVertical: 10,
+    backgroundColor: '#D4A574',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#8B6F47',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   copyButtonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   hint: {
     fontSize: 14,
-    color: '#666',
+    color: '#8B6F47',
     fontStyle: 'italic',
+    marginLeft: 4,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    borderRadius: 12,
     padding: 16,
     fontSize: 18,
     backgroundColor: '#fff',
@@ -239,6 +263,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 2,
     fontWeight: '600',
+    color: '#333',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inputError: {
     borderColor: '#ff3b30',
@@ -253,17 +286,19 @@ const styles = StyleSheet.create({
   matchButton: {
     width: '100%',
     paddingVertical: 16,
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: '#8B6F47',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     elevation: 5,
   },
   matchButtonDisabled: {
@@ -272,7 +307,8 @@ const styles = StyleSheet.create({
   matchButtonText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
 

@@ -172,10 +172,10 @@ const LoveHourScreen: React.FC = () => {
 
   // PhotoGallery component
   const PhotoGallery = ({ photos }: { photos: Photo[] }) => {
-    if (loadingPhotos) {
+      if (loadingPhotos) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#D4A574" />
           <Text style={styles.emptyText}>Loading photos...</Text>
         </View>
       );
@@ -384,14 +384,14 @@ const LoveHourScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffe6d5',
   },
   scrollView: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
-    paddingTop: 40,
+    padding: 24,
+    paddingTop: 60,
     paddingBottom: 40,
   },
   header: {
@@ -399,39 +399,52 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   title: {
-    fontSize: 32,
+    fontSize: 42,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
+    color: '#8B6F47',
+    marginBottom: 8,
+    letterSpacing: 1,
   },
   subtitle: {
-    fontSize: 18,
-    color: '#666',
+    fontSize: 20,
+    color: '#6B5B4A',
+    fontWeight: '600',
   },
   tabContainer: {
     flexDirection: 'row',
     marginBottom: 20,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
     padding: 4,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   tab: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: 'center',
   },
   activeTab: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#D4A574',
   },
   tabText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#666',
+    color: '#6B5B4A',
   },
   activeTabText: {
     color: '#fff',
+    fontWeight: '700',
   },
   gallerySection: {
     minHeight: 200,
@@ -460,7 +473,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: '#8B6F47',
     textAlign: 'center',
     marginTop: 10,
   },
@@ -470,19 +483,21 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#333',
+    color: '#6B5B4A',
     marginBottom: 20,
   },
   imageContainer: {
     width: '100%',
     height: 300,
     marginBottom: 20,
-    borderRadius: 10,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#f0f0f0',
-    shadowColor: '#000',
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -493,25 +508,38 @@ const styles = StyleSheet.create({
   },
   button: {
     width: '100%',
-    padding: 15,
-    borderRadius: 8,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 15,
+    marginBottom: 16,
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
   },
   pickButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
   },
   uploadButton: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   uploadingContainer: {
     flexDirection: 'row',
@@ -524,32 +552,41 @@ const styles = StyleSheet.create({
   statusText: {
     marginTop: 10,
     fontSize: 14,
-    color: '#666',
+    color: '#6B5B4A',
     textAlign: 'center',
   },
   captionContainer: {
     marginBottom: 15,
   },
   captionLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#6B5B4A',
     marginBottom: 8,
+    marginLeft: 4,
   },
   captionInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
     color: '#333',
     backgroundColor: '#fff',
     textAlignVertical: 'top',
     minHeight: 80,
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   captionHint: {
     fontSize: 12,
-    color: '#999',
+    color: '#8B6F47',
     textAlign: 'right',
     marginTop: 4,
   },
@@ -557,16 +594,24 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: 30,
     paddingVertical: 15,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
     marginTop: 20,
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   signOutText: {
-    color: '#007AFF',
+    color: '#8B6F47',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   modalContainer: {
     flex: 1,
