@@ -13,10 +13,11 @@ import {
   RefreshControl,
   Modal,
   Pressable,
+  TextInput,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
-import { uploadUserImage, getUserData, verifyMutualMatch } from '../services/userService';
+import { uploadUserImage, getUserData, verifyMutualMatch, getUserPhotos, Photo } from '../services/userService';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 60) / 3; // 3 columns with padding
@@ -30,16 +31,17 @@ const LoveHourScreen: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [caption, setCaption] = useState<string>('');
   
   // Photo gallery state
   const [activeTab, setActiveTab] = useState<TabType>('your');
-  const [userPhotos, setUserPhotos] = useState<string[]>([]);
-  const [partnerPhotos, setPartnerPhotos] = useState<string[]>([]);
+  const [userPhotos, setUserPhotos] = useState<Photo[]>([]);
+  const [partnerPhotos, setPartnerPhotos] = useState<Photo[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
   // Image viewer modal state
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingImage, setViewingImage] = useState<Photo | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
   // Fetch user and partner photos
@@ -49,18 +51,21 @@ const LoveHourScreen: React.FC = () => {
     try {
       setLoadingPhotos(true);
       
-      // Fetch current user's photos
-      const userData = await getUserData(user.uid);
-      if (userData?.photos) {
-        setUserPhotos(userData.photos);
-      } else {
-        setUserPhotos([]);
-      }
+      // Fetch current user's photos from subcollection
+      const photos = await getUserPhotos(user.uid);
+      setUserPhotos(photos);
 
       // Fetch partner's photos if matched
       const verification = await verifyMutualMatch(user.uid);
-      if (verification.isValid && verification.partnerData?.photos) {
-        setPartnerPhotos(verification.partnerData.photos);
+      if (verification.isValid && verification.partnerData) {
+        // Get partner's user ID from current user's matchedWith field
+        const userData = await getUserData(user.uid);
+        if (userData?.matchedWith) {
+          const partnerPhotosData = await getUserPhotos(userData.matchedWith);
+          setPartnerPhotos(partnerPhotosData);
+        } else {
+          setPartnerPhotos([]);
+        }
       } else {
         setPartnerPhotos([]);
       }
@@ -105,6 +110,7 @@ const LoveHourScreen: React.FC = () => {
       if (!result.canceled && result.assets[0]) {
         setSelectedImage(result.assets[0].uri);
         setUploadStatus('');
+        setCaption('');
       }
     } catch (error: any) {
       console.error('Error picking image:', error);
@@ -118,11 +124,17 @@ const LoveHourScreen: React.FC = () => {
       return;
     }
 
+    // Validate caption
+    if (!caption || caption.trim().length === 0) {
+      Alert.alert('Caption Required', 'Please enter a caption for your image');
+      return;
+    }
+
     setUploading(true);
     setUploadStatus('Uploading...');
 
     try {
-      const result = await uploadUserImage(user.uid, selectedImage);
+      const result = await uploadUserImage(user.uid, selectedImage, caption);
 
       if (result.success && result.downloadURL) {
         setUploadStatus('Upload successful!');
@@ -136,6 +148,7 @@ const LoveHourScreen: React.FC = () => {
               text: 'OK',
               onPress: () => {
                 setSelectedImage(null);
+                setCaption('');
                 setUploadStatus('');
               },
             },
@@ -158,7 +171,7 @@ const LoveHourScreen: React.FC = () => {
   };
 
   // PhotoGallery component
-  const PhotoGallery = ({ photos }: { photos: string[] }) => {
+  const PhotoGallery = ({ photos }: { photos: Photo[] }) => {
     if (loadingPhotos) {
       return (
         <View style={styles.emptyContainer}>
@@ -184,7 +197,7 @@ const LoveHourScreen: React.FC = () => {
       <FlatList
         data={photos}
         numColumns={3}
-        keyExtractor={(item, index) => `${item}-${index}`}
+        keyExtractor={(item, index) => item.id || `${item.url}-${index}`}
         contentContainerStyle={styles.galleryContainer}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -192,7 +205,7 @@ const LoveHourScreen: React.FC = () => {
             onPress={() => handleImagePress(item)}
             activeOpacity={0.8}
           >
-            <Image source={{ uri: item }} style={styles.photoImage} />
+            <Image source={{ uri: item.url }} style={styles.photoImage} />
           </TouchableOpacity>
         )}
         scrollEnabled={false}
@@ -203,8 +216,8 @@ const LoveHourScreen: React.FC = () => {
   const currentPhotos = activeTab === 'your' ? userPhotos : partnerPhotos;
 
   // Handle image click to open modal
-  const handleImagePress = (imageUrl: string) => {
-    setViewingImage(imageUrl);
+  const handleImagePress = (photo: Photo) => {
+    setViewingImage(photo);
     setModalVisible(true);
   };
 
@@ -267,6 +280,24 @@ const LoveHourScreen: React.FC = () => {
           </View>
         )}
 
+        {selectedImage && (
+          <View style={styles.captionContainer}>
+            <Text style={styles.captionLabel}>Caption *</Text>
+            <TextInput
+              style={styles.captionInput}
+              value={caption}
+              onChangeText={setCaption}
+              placeholder="Enter a caption for your image"
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={3}
+              maxLength={200}
+              editable={!uploading}
+            />
+            <Text style={styles.captionHint}>{caption.length}/200</Text>
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.button, styles.pickButton]}
           onPress={pickImage}
@@ -282,10 +313,10 @@ const LoveHourScreen: React.FC = () => {
             style={[
               styles.button,
               styles.uploadButton,
-              uploading && styles.buttonDisabled,
+              (uploading || !caption.trim()) && styles.buttonDisabled,
             ]}
             onPress={uploadImage}
-            disabled={uploading}
+            disabled={uploading || !caption.trim()}
           >
             {uploading ? (
               <View style={styles.uploadingContainer}>
@@ -321,22 +352,27 @@ const LoveHourScreen: React.FC = () => {
               <Text style={styles.modalCloseText}>✕</Text>
             </TouchableOpacity>
             {viewingImage && (
-              <ScrollView
-                style={styles.modalScrollView}
-                contentContainerStyle={styles.modalScrollContent}
-                minimumZoomScale={1}
-                maximumZoomScale={5}
-                showsVerticalScrollIndicator={true}
-                showsHorizontalScrollIndicator={true}
-                bouncesZoom={true}
-                scrollEventThrottle={16}
-              >
-                <Image
-                  source={{ uri: viewingImage }}
-                  style={styles.modalImage}
-                  resizeMode="contain"
-                />
-              </ScrollView>
+              <>
+                <ScrollView
+                  style={styles.modalScrollView}
+                  contentContainerStyle={styles.modalScrollContent}
+                  minimumZoomScale={1}
+                  maximumZoomScale={5}
+                  showsVerticalScrollIndicator={true}
+                  showsHorizontalScrollIndicator={true}
+                  bouncesZoom={true}
+                  scrollEventThrottle={16}
+                >
+                  <Image
+                    source={{ uri: viewingImage.url }}
+                    style={styles.modalImage}
+                    resizeMode="contain"
+                  />
+                </ScrollView>
+                <View style={styles.modalCaptionContainer}>
+                  <Text style={styles.modalCaptionText}>{viewingImage.caption}</Text>
+                </View>
+              </>
             )}
           </Pressable>
         </Pressable>
@@ -490,6 +526,32 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  captionContainer: {
+    marginBottom: 15,
+  },
+  captionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  captionInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#333',
+    backgroundColor: '#fff',
+    textAlignVertical: 'top',
+    minHeight: 80,
+  },
+  captionHint: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+    marginTop: 4,
+  },
   signOutButton: {
     alignSelf: 'center',
     paddingHorizontal: 30,
@@ -548,6 +610,21 @@ const styles = StyleSheet.create({
   modalImage: {
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
+  },
+  modalCaptionContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 20,
+    paddingBottom: 40,
+  },
+  modalCaptionText: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });
 

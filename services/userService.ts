@@ -8,11 +8,13 @@ import {
   where,
   getDocs,
   collection,
+  addDoc,
   serverTimestamp,
   onSnapshot,
   enableNetwork,
   runTransaction,
-  arrayUnion
+  arrayUnion,
+  orderBy
 } from 'firebase/firestore';
 import { db, storage, ensureFirestoreNetwork } from '../config/firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
@@ -34,6 +36,13 @@ export interface UserData {
   fullName?: string;
   gender?: 'male' | 'female' | 'other';
   photos?: string[];
+}
+
+export interface Photo {
+  id?: string;
+  url: string;
+  caption: string;
+  createdAt: any;
 }
 
 /**
@@ -447,16 +456,58 @@ export const subscribeToUserData = (
 };
 
 /**
- * Upload user image to Firebase Storage and save URL to Firestore
+ * Get user photos from Firestore subcollection
+ * @param userId - The user ID
+ * @returns Promise with array of Photo objects, ordered by createdAt descending
+ */
+export const getUserPhotos = async (userId: string): Promise<Photo[]> => {
+  try {
+    await ensureFirestoreReady();
+
+    const photosCollection = collection(db, 'users', userId, 'photos');
+    const photosQuery = query(photosCollection, orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(photosQuery);
+
+    const photos: Photo[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      photos.push({
+        id: doc.id,
+        url: data.url,
+        caption: data.caption || '',
+        createdAt: data.createdAt
+      });
+    });
+
+    return photos;
+  } catch (error: any) {
+    console.error('Error fetching user photos:', error);
+    // If subcollection doesn't exist or is empty, return empty array
+    return [];
+  }
+};
+
+/**
+ * Upload user image to Firebase Storage and save URL with caption to Firestore subcollection
  * @param userId - The user ID
  * @param imageUri - Local URI of the image to upload
+ * @param caption - Required caption for the image
  * @returns Promise with download URL or error
  */
 export const uploadUserImage = async (
   userId: string,
-  imageUri: string
+  imageUri: string,
+  caption: string
 ): Promise<{ success: boolean; downloadURL?: string; error?: string }> => {
   try {
+    // Validate caption
+    if (!caption || caption.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Caption is required'
+      };
+    }
+
     // Wait for Firestore to be ready
     await ensureFirestoreReady();
 
@@ -495,10 +546,12 @@ export const uploadUserImage = async (
     // 4. Get the download URL
     const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-    // 5. Save reference to Firestore
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      photos: arrayUnion(downloadURL)
+    // 5. Save to Firestore subcollection with caption
+    const photosCollection = collection(db, 'users', userId, 'photos');
+    await addDoc(photosCollection, {
+      url: downloadURL,
+      caption: caption.trim(),
+      createdAt: serverTimestamp()
     });
 
     return { success: true, downloadURL };
