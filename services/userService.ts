@@ -11,9 +11,11 @@ import {
   serverTimestamp,
   onSnapshot,
   enableNetwork,
-  runTransaction
+  runTransaction,
+  arrayUnion
 } from 'firebase/firestore';
-import { db, ensureFirestoreNetwork } from '../config/firebase';
+import { db, storage, ensureFirestoreNetwork } from '../config/firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { generateFriendCode } from '../utils/friendCodeGenerator';
 
 /**
@@ -31,6 +33,7 @@ export interface UserData {
   displayName?: string;
   fullName?: string;
   gender?: 'male' | 'female' | 'other';
+  photos?: string[];
 }
 
 /**
@@ -441,5 +444,70 @@ export const subscribeToUserData = (
     console.error('Error subscribing to user data:', error);
     callback(null);
   });
+};
+
+/**
+ * Upload user image to Firebase Storage and save URL to Firestore
+ * @param userId - The user ID
+ * @param imageUri - Local URI of the image to upload
+ * @returns Promise with download URL or error
+ */
+export const uploadUserImage = async (
+  userId: string,
+  imageUri: string
+): Promise<{ success: boolean; downloadURL?: string; error?: string }> => {
+  try {
+    // Wait for Firestore to be ready
+    await ensureFirestoreReady();
+
+    // 1. Convert URI to Blob
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    // 2. Create a reference to the file in Firebase Storage
+    const timestamp = Date.now();
+    const filename = `users/${userId}/images/${timestamp}.jpg`;
+    const storageRef = ref(storage, filename);
+
+    // 3. Upload the file
+    const uploadTask = uploadBytesResumable(storageRef, blob);
+
+    // Wait for upload to complete
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          // Progress tracking (optional - can be used for UI)
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Upload progress:', Math.round(progress) + '%');
+        },
+        (error) => {
+          console.error('Upload error:', error);
+          reject(error);
+        },
+        async () => {
+          // Upload completed successfully
+          resolve();
+        }
+      );
+    });
+
+    // 4. Get the download URL
+    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+    // 5. Save reference to Firestore
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      photos: arrayUnion(downloadURL)
+    });
+
+    return { success: true, downloadURL };
+  } catch (error: any) {
+    console.error('Error uploading image:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to upload image'
+    };
+  }
 };
 

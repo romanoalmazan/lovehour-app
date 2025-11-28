@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAuth, getAuth } from 'firebase/auth';
 import { getFirestore, enableNetwork } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // TODO: Replace with your Firebase config
@@ -46,6 +47,9 @@ try {
 // Initialize Firestore
 const db = getFirestore(app);
 
+// Initialize Firebase Storage
+const storage = getStorage(app);
+
 // Track if Firestore network has been enabled
 let firestoreNetworkEnabled = false;
 
@@ -67,6 +71,6 @@ const ensureFirestoreNetwork = async (): Promise<void> => {
   }
 };
 
-export { auth, db, ensureFirestoreNetwork };
+export { auth, db, storage, ensureFirestoreNetwork };
 export default app;
 
