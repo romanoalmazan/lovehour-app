@@ -11,6 +11,8 @@ import {
   FlatList,
   Dimensions,
   RefreshControl,
+  Modal,
+  Pressable,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +37,10 @@ const LoveHourScreen: React.FC = () => {
   const [partnerPhotos, setPartnerPhotos] = useState<string[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Image viewer modal state
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   // Fetch user and partner photos
   const fetchPhotos = async () => {
@@ -181,9 +187,13 @@ const LoveHourScreen: React.FC = () => {
         keyExtractor={(item, index) => `${item}-${index}`}
         contentContainerStyle={styles.galleryContainer}
         renderItem={({ item }) => (
-          <View style={styles.photoItem}>
+          <TouchableOpacity
+            style={styles.photoItem}
+            onPress={() => handleImagePress(item)}
+            activeOpacity={0.8}
+          >
             <Image source={{ uri: item }} style={styles.photoImage} />
-          </View>
+          </TouchableOpacity>
         )}
         scrollEnabled={false}
       />
@@ -191,6 +201,18 @@ const LoveHourScreen: React.FC = () => {
   };
 
   const currentPhotos = activeTab === 'your' ? userPhotos : partnerPhotos;
+
+  // Handle image click to open modal
+  const handleImagePress = (imageUrl: string) => {
+    setViewingImage(imageUrl);
+    setModalVisible(true);
+  };
+
+  // Close modal
+  const closeModal = () => {
+    setModalVisible(false);
+    setViewingImage(null);
+  };
 
   return (
     <View style={styles.container}>
@@ -285,6 +307,40 @@ const LoveHourScreen: React.FC = () => {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Full-Screen Image Modal */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <Pressable style={styles.modalContainer} onPress={closeModal}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={closeModal}>
+              <Text style={styles.modalCloseText}>✕</Text>
+            </TouchableOpacity>
+            {viewingImage && (
+              <ScrollView
+                style={styles.modalScrollView}
+                contentContainerStyle={styles.modalScrollContent}
+                minimumZoomScale={1}
+                maximumZoomScale={5}
+                showsVerticalScrollIndicator={true}
+                showsHorizontalScrollIndicator={true}
+                bouncesZoom={true}
+                scrollEventThrottle={16}
+              >
+                <Image
+                  source={{ uri: viewingImage }}
+                  style={styles.modalImage}
+                  resizeMode="contain"
+                />
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -448,6 +504,50 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1000,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  modalScrollView: {
+    flex: 1,
+    width: '100%',
+  },
+  modalScrollContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
+  },
+  modalImage: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
   },
 });
 
