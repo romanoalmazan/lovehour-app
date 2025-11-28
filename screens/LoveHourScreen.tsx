@@ -43,6 +43,9 @@ const LoveHourScreen: React.FC = () => {
   // Image viewer modal state
   const [viewingImage, setViewingImage] = useState<Photo | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  
+  // Upload modal state
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
 
   // Fetch user and partner photos
   const fetchPhotos = async () => {
@@ -111,6 +114,7 @@ const LoveHourScreen: React.FC = () => {
         setSelectedImage(result.assets[0].uri);
         setUploadStatus('');
         setCaption('');
+        setUploadModalVisible(true);
       }
     } catch (error: any) {
       console.error('Error picking image:', error);
@@ -150,6 +154,7 @@ const LoveHourScreen: React.FC = () => {
                 setSelectedImage(null);
                 setCaption('');
                 setUploadStatus('');
+                setUploadModalVisible(false);
               },
             },
           ]
@@ -171,7 +176,7 @@ const LoveHourScreen: React.FC = () => {
   };
 
   // PhotoGallery component
-  const PhotoGallery = ({ photos }: { photos: Photo[] }) => {
+  const PhotoGallery = ({ photos, showUploadButton }: { photos: Photo[]; showUploadButton?: boolean }) => {
       if (loadingPhotos) {
       return (
         <View style={styles.emptyContainer}>
@@ -181,7 +186,10 @@ const LoveHourScreen: React.FC = () => {
       );
     }
 
-    if (photos.length === 0) {
+    // Create data array with upload button as first item if showUploadButton is true
+    const galleryData = showUploadButton ? [{ id: 'upload-button', isUploadButton: true }, ...photos] : photos;
+
+    if (galleryData.length === 0 || (photos.length === 0 && !showUploadButton)) {
       return (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
@@ -195,19 +203,44 @@ const LoveHourScreen: React.FC = () => {
 
     return (
       <FlatList
-        data={photos}
+        data={galleryData}
         numColumns={3}
-        keyExtractor={(item, index) => item.id || `${item.url}-${index}`}
+        keyExtractor={(item, index) => {
+          if (item && typeof item === 'object' && 'isUploadButton' in item) {
+            return 'upload-button';
+          }
+          return (item as Photo).id || `${(item as Photo).url}-${index}`;
+        }}
         contentContainerStyle={styles.galleryContainer}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.photoItem}
-            onPress={() => handleImagePress(item)}
-            activeOpacity={0.8}
-          >
-            <Image source={{ uri: item.url }} style={styles.photoImage} />
-          </TouchableOpacity>
-        )}
+        renderItem={({ item, index }) => {
+          // Render upload button as first item
+          if (item && typeof item === 'object' && 'isUploadButton' in item) {
+            return (
+              <TouchableOpacity
+                style={styles.uploadButtonItem}
+                onPress={pickImage}
+                activeOpacity={0.8}
+              >
+                <View style={styles.uploadButtonContent}>
+                  <Text style={styles.uploadButtonIcon}>+</Text>
+                  <Text style={styles.uploadButtonText}>Send Update</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }
+          
+          // Render photo item
+          const photo = item as Photo;
+          return (
+            <TouchableOpacity
+              style={styles.photoItem}
+              onPress={() => handleImagePress(photo)}
+              activeOpacity={0.8}
+            >
+              <Image source={{ uri: photo.url }} style={styles.photoImage} />
+            </TouchableOpacity>
+          );
+        }}
         scrollEnabled={false}
       />
     );
@@ -236,7 +269,7 @@ const LoveHourScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="#007AFF"
+            tintColor="#D4A574"
           />
         }
       >
@@ -267,77 +300,96 @@ const LoveHourScreen: React.FC = () => {
 
         {/* Photo Gallery */}
         <View style={styles.gallerySection}>
-          <PhotoGallery photos={currentPhotos} />
+          <PhotoGallery photos={currentPhotos} showUploadButton={activeTab === 'your'} />
         </View>
-
-        {/* Upload Section */}
-        <View style={styles.uploadSection}>
-          <Text style={styles.sectionTitle}>Upload Image</Text>
-
-        {selectedImage && (
-          <View style={styles.imageContainer}>
-            <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
-          </View>
-        )}
-
-        {selectedImage && (
-          <View style={styles.captionContainer}>
-            <Text style={styles.captionLabel}>Caption *</Text>
-            <TextInput
-              style={styles.captionInput}
-              value={caption}
-              onChangeText={setCaption}
-              placeholder="Enter a caption for your image"
-              placeholderTextColor="#999"
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-              editable={!uploading}
-            />
-            <Text style={styles.captionHint}>{caption.length}/200</Text>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.button, styles.pickButton]}
-          onPress={pickImage}
-          disabled={uploading}
-        >
-          <Text style={styles.buttonText}>
-            {selectedImage ? 'Pick Another Image' : 'Pick Image'}
-          </Text>
-        </TouchableOpacity>
-
-        {selectedImage && (
-          <TouchableOpacity
-            style={[
-              styles.button,
-              styles.uploadButton,
-              (uploading || !caption.trim()) && styles.buttonDisabled,
-            ]}
-            onPress={uploadImage}
-            disabled={uploading || !caption.trim()}
-          >
-            {uploading ? (
-              <View style={styles.uploadingContainer}>
-                <ActivityIndicator color="#fff" style={styles.spinner} />
-                <Text style={styles.buttonText}>Uploading...</Text>
-              </View>
-            ) : (
-              <Text style={styles.buttonText}>Upload to Firebase</Text>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {uploadStatus && (
-          <Text style={styles.statusText}>{uploadStatus}</Text>
-        )}
-      </View>
 
         <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Upload Modal */}
+      <Modal
+        visible={uploadModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setUploadModalVisible(false);
+          setSelectedImage(null);
+          setCaption('');
+        }}
+      >
+        <View style={styles.uploadModalContainer}>
+          <View style={styles.uploadModalContent}>
+            <View style={styles.uploadModalHeader}>
+              <Text style={styles.uploadModalTitle}>Send Update</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setUploadModalVisible(false);
+                  setSelectedImage(null);
+                  setCaption('');
+                }}
+              >
+                <Text style={styles.uploadModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {selectedImage && (
+              <>
+                <View style={styles.uploadImagePreviewContainer}>
+                  <Image source={{ uri: selectedImage }} style={styles.uploadImagePreview} />
+                  <TouchableOpacity
+                    style={styles.changeImageButton}
+                    onPress={pickImage}
+                    disabled={uploading}
+                  >
+                    <Text style={styles.changeImageText}>Change Image</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.captionContainer}>
+                  <Text style={styles.captionLabel}>Caption *</Text>
+                  <TextInput
+                    style={styles.captionInput}
+                    value={caption}
+                    onChangeText={setCaption}
+                    placeholder="Enter a caption for your image"
+                    placeholderTextColor="#999"
+                    multiline
+                    numberOfLines={3}
+                    maxLength={200}
+                    editable={!uploading}
+                  />
+                  <Text style={styles.captionHint}>{caption.length}/200</Text>
+                </View>
+
+                {uploadStatus && (
+                  <Text style={styles.statusText}>{uploadStatus}</Text>
+                )}
+
+                <TouchableOpacity
+                  style={[
+                    styles.button,
+                    styles.uploadButton,
+                    (uploading || !caption.trim()) && styles.buttonDisabled,
+                  ]}
+                  onPress={uploadImage}
+                  disabled={uploading || !caption.trim()}
+                >
+                  {uploading ? (
+                    <View style={styles.uploadingContainer}>
+                      <ActivityIndicator color="#fff" style={styles.spinner} />
+                      <Text style={styles.buttonText}>Uploading...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.buttonText}>Send Update</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Full-Screen Image Modal */}
       <Modal
@@ -466,6 +518,35 @@ const styles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
   },
+  uploadButtonItem: {
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
+    margin: 5,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadButtonContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadButtonIcon: {
+    fontSize: 32,
+    color: '#D4A574',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  uploadButtonText: {
+    fontSize: 12,
+    color: '#8B6F47',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   emptyContainer: {
     padding: 40,
     alignItems: 'center',
@@ -476,35 +557,6 @@ const styles = StyleSheet.create({
     color: '#8B6F47',
     textAlign: 'center',
     marginTop: 10,
-  },
-  uploadSection: {
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#6B5B4A',
-    marginBottom: 20,
-  },
-  imageContainer: {
-    width: '100%',
-    height: 300,
-    marginBottom: 20,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#D4A574',
-    shadowColor: '#8B6F47',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  imagePreview: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
   },
   button: {
     width: '100%',
@@ -671,6 +723,63 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  uploadModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  uploadModalContent: {
+    backgroundColor: '#ffe6d5',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  uploadModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  uploadModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#8B6F47',
+    letterSpacing: 0.5,
+  },
+  uploadModalClose: {
+    fontSize: 28,
+    color: '#8B6F47',
+    fontWeight: 'bold',
+  },
+  uploadImagePreviewContainer: {
+    marginBottom: 20,
+  },
+  uploadImagePreview: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    resizeMode: 'cover',
+    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+  },
+  changeImageButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    alignItems: 'center',
+  },
+  changeImageText: {
+    color: '#8B6F47',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
