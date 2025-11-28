@@ -20,7 +20,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { uploadUserImage, getUserData, verifyMutualMatch, getUserPhotos, Photo } from '../services/userService';
 
 const { width } = Dimensions.get('window');
-const PHOTO_SIZE = (width - 60) / 3; // 3 columns with padding
+// Calculate photo size for 3-column grid
+// Container padding: 24px left + 24px right = 48px
+// Margins: 5px between each item (2 gaps for 3 items = 10px)
+// Date section padding: 5px left (from paddingLeft: 5 in dateSectionHeader)
+// Available width: width - 48 - 5 = width - 53
+// Each photo: (available_width - 2 * margin) / 3
+// margin = 5px between items, so 2 margins for 3 items = 10px
+// PHOTO_SIZE = (width - 53 - 10) / 3 = (width - 63) / 3
+const PHOTO_SIZE = Math.floor((width - 63) / 3);
 
 type TabType = 'your' | 'partner';
 
@@ -91,6 +99,73 @@ const LoveHourScreen: React.FC = () => {
   useEffect(() => {
     fetchPhotos();
   }, [user]);
+
+  // Format date header (Today, Yesterday, or formatted date)
+  const formatDateHeader = (date: Date): string => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const compareDate = new Date(date);
+    compareDate.setHours(0, 0, 0, 0);
+    
+    if (compareDate.getTime() === today.getTime()) {
+      return 'Today';
+    } else if (compareDate.getTime() === yesterday.getTime()) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString('en-US', { 
+        month: 'long', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+    }
+  };
+
+  // Group photos by date
+  const groupPhotosByDate = (photos: Photo[]): Array<{ label: string; photos: Photo[]; dateKey: string }> => {
+    const groups: { [key: string]: Photo[] } = {};
+    
+    photos.forEach((photo) => {
+      if (!photo.createdAt) return;
+      
+      // Convert Firestore timestamp to Date
+      const photoDate = photo.createdAt.toDate ? photo.createdAt.toDate() : new Date(photo.createdAt);
+      
+      // Use local date (not UTC) to ensure correct date grouping
+      const year = photoDate.getFullYear();
+      const month = String(photoDate.getMonth() + 1).padStart(2, '0');
+      const day = String(photoDate.getDate()).padStart(2, '0');
+      const dateKey = `${year}-${month}-${day}`; // YYYY-MM-DD format using local date
+      
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(photo);
+    });
+    
+    // Convert to array and sort by date (newest first)
+    // Use Set to ensure unique dateKeys before mapping
+    const uniqueDateKeys = Array.from(new Set(Object.keys(groups)));
+    const sortedGroups = uniqueDateKeys
+      .map((dateKey) => {
+        // Parse dateKey as local date, not UTC
+        const [year, month, day] = dateKey.split('-').map(Number);
+        const photoDate = new Date(year, month - 1, day); // month is 0-indexed
+        return {
+          label: formatDateHeader(photoDate),
+          photos: groups[dateKey],
+          dateKey,
+          sortKey: photoDate.getTime(),
+        };
+      })
+      .sort((a, b) => b.sortKey - a.sortKey)
+      .map(({ label, photos, dateKey }) => ({ label, photos, dateKey }));
+    
+    return sortedGroups;
+  };
 
   const pickImage = async () => {
     // Request permissions
@@ -177,7 +252,7 @@ const LoveHourScreen: React.FC = () => {
 
   // PhotoGallery component
   const PhotoGallery = ({ photos, showUploadButton }: { photos: Photo[]; showUploadButton?: boolean }) => {
-      if (loadingPhotos) {
+    if (loadingPhotos) {
       return (
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color="#D4A574" />
@@ -186,10 +261,36 @@ const LoveHourScreen: React.FC = () => {
       );
     }
 
-    // Create data array with upload button as first item if showUploadButton is true
-    const galleryData = showUploadButton ? [{ id: 'upload-button', isUploadButton: true }, ...photos] : photos;
+    // Group photos by date
+    const dateGroups = groupPhotosByDate(photos);
+    
+    // Ensure "Today" section exists if upload button should be shown
+    const todayLabel = 'Today';
+    const todayGroupIndex = dateGroups.findIndex(group => group.label === todayLabel);
+    
+    if (showUploadButton) {
+      if (todayGroupIndex === -1) {
+        // Create empty "Today" section if it doesn't exist
+        // Use local date (not UTC) for dateKey
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const todayDateKey = `${year}-${month}-${day}`;
+        
+        dateGroups.unshift({
+          label: todayLabel,
+          photos: [],
+          dateKey: todayDateKey,
+        });
+      }
+    }
 
-    if (galleryData.length === 0 || (photos.length === 0 && !showUploadButton)) {
+    // Check if we have any photos or sections
+    const hasPhotos = photos.length > 0;
+    const hasSections = dateGroups.length > 0;
+
+    if (!hasPhotos && !showUploadButton) {
       return (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
@@ -201,48 +302,45 @@ const LoveHourScreen: React.FC = () => {
       );
     }
 
+    // Render a section with photos in 3-column grid
+    const renderPhotoGrid = (sectionPhotos: Photo[]) => {
+      return sectionPhotos.map((photo, index) => (
+        <TouchableOpacity
+          key={photo.id || `${photo.url}-${index}`}
+          style={styles.photoItem}
+          onPress={() => handleImagePress(photo)}
+          activeOpacity={0.8}
+        >
+          <Image source={{ uri: photo.url }} style={styles.photoImage} />
+        </TouchableOpacity>
+      ));
+    };
+
     return (
-      <FlatList
-        data={galleryData}
-        numColumns={3}
-        keyExtractor={(item, index) => {
-          if (item && typeof item === 'object' && 'isUploadButton' in item) {
-            return 'upload-button';
-          }
-          return (item as Photo).id || `${(item as Photo).url}-${index}`;
-        }}
-        contentContainerStyle={styles.galleryContainer}
-        renderItem={({ item, index }) => {
-          // Render upload button as first item
-          if (item && typeof item === 'object' && 'isUploadButton' in item) {
-            return (
-              <TouchableOpacity
-                style={styles.uploadButtonItem}
-                onPress={pickImage}
-                activeOpacity={0.8}
-              >
-                <View style={styles.uploadButtonContent}>
-                  <Text style={styles.uploadButtonIcon}>+</Text>
-                  <Text style={styles.uploadButtonText}>Send Update</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }
-          
-          // Render photo item
-          const photo = item as Photo;
-          return (
-            <TouchableOpacity
-              style={styles.photoItem}
-              onPress={() => handleImagePress(photo)}
-              activeOpacity={0.8}
-            >
-              <Image source={{ uri: photo.url }} style={styles.photoImage} />
-            </TouchableOpacity>
-          );
-        }}
-        scrollEnabled={false}
-      />
+      <View style={styles.galleryContainer}>
+        {dateGroups.map((group, groupIndex) => (
+          <View key={`date-section-${activeTab}-${groupIndex}-${group.dateKey}`} style={styles.dateSection}>
+            <Text style={styles.dateSectionHeader}>{group.label}</Text>
+            <View style={styles.photoGrid}>
+              {/* Add upload button in "Today" section if needed */}
+              {showUploadButton && group.label === todayLabel && (
+                <TouchableOpacity
+                  style={styles.uploadButtonItem}
+                  onPress={pickImage}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.uploadButtonContent}>
+                    <Text style={styles.uploadButtonIcon}>+</Text>
+                    <Text style={styles.uploadButtonText}>Send Update</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              {/* Render photos in this section */}
+              {renderPhotoGrid(group.photos)}
+            </View>
+          </View>
+        ))}
+      </View>
     );
   };
 
@@ -505,10 +603,29 @@ const styles = StyleSheet.create({
   galleryContainer: {
     padding: 0,
   },
+  dateSection: {
+    marginBottom: 30,
+  },
+  dateSectionHeader: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#8B6F47',
+    marginBottom: 12,
+    paddingLeft: 5,
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    width: '100%',
+  },
   photoItem: {
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
-    margin: 5,
+    marginRight: 5,
+    marginBottom: 5,
+    marginTop: 0,
+    marginLeft: 0,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#f0f0f0',
@@ -521,7 +638,10 @@ const styles = StyleSheet.create({
   uploadButtonItem: {
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
-    margin: 5,
+    marginRight: 5,
+    marginBottom: 5,
+    marginTop: 0,
+    marginLeft: 0,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#fff',
