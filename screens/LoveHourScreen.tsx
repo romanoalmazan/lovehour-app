@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
-import { uploadUserImage, getUserData, verifyMutualMatch, getUserPhotos, Photo } from '../services/userService';
+import { uploadUserImage, getUserData, verifyMutualMatch, subscribeToUserPhotos, Photo } from '../services/userService';
 
 const { width } = Dimensions.get('window');
 // Calculate photo size for 3-column grid
@@ -48,6 +48,9 @@ const LoveHourScreen: React.FC = () => {
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
+  // Track broken images (images that fail to load)
+  const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
+  
   // Image viewer modal state
   const [viewingImage, setViewingImage] = useState<Photo | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -55,50 +58,68 @@ const LoveHourScreen: React.FC = () => {
   // Upload modal state
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
 
-  // Fetch user and partner photos
-  const fetchPhotos = async () => {
+  // Set up real-time photo subscriptions
+  useEffect(() => {
     if (!user) return;
 
-    try {
-      setLoadingPhotos(true);
-      
-      // Fetch current user's photos from subcollection
-      const photos = await getUserPhotos(user.uid);
-      setUserPhotos(photos);
+    let unsubscribeUserPhotos: (() => void) | null = null;
+    let unsubscribePartnerPhotos: (() => void) | null = null;
 
-      // Fetch partner's photos if matched
-      const verification = await verifyMutualMatch(user.uid);
-      if (verification.isValid && verification.partnerData) {
-        // Get partner's user ID from current user's matchedWith field
-        const userData = await getUserData(user.uid);
-        if (userData?.matchedWith) {
-          const partnerPhotosData = await getUserPhotos(userData.matchedWith);
-          setPartnerPhotos(partnerPhotosData);
+    const setupPhotoSubscriptions = async () => {
+      try {
+        setLoadingPhotos(true);
+        
+        // Subscribe to current user's photos with real-time updates
+        unsubscribeUserPhotos = subscribeToUserPhotos(user.uid, (photos) => {
+          setUserPhotos(photos);
+          setLoadingPhotos(false);
+          setRefreshing(false);
+        });
+
+        // Subscribe to partner's photos if matched
+        const verification = await verifyMutualMatch(user.uid);
+        if (verification.isValid && verification.partnerData) {
+          const userData = await getUserData(user.uid);
+          if (userData?.matchedWith) {
+            unsubscribePartnerPhotos = subscribeToUserPhotos(userData.matchedWith, (photos) => {
+              setPartnerPhotos(photos);
+            });
+          } else {
+            setPartnerPhotos([]);
+          }
         } else {
           setPartnerPhotos([]);
         }
-      } else {
-        setPartnerPhotos([]);
+      } catch (error: any) {
+        console.error('Error setting up photo subscriptions:', error);
+        Alert.alert('Error', 'Failed to load photos. Please try again.');
+        setLoadingPhotos(false);
+        setRefreshing(false);
       }
-    } catch (error: any) {
-      console.error('Error fetching photos:', error);
-      Alert.alert('Error', 'Failed to load photos. Please try again.');
-    } finally {
-      setLoadingPhotos(false);
-      setRefreshing(false);
-    }
-  };
+    };
 
-  // Refresh photos manually
+    setupPhotoSubscriptions();
+
+    // Cleanup subscriptions on unmount or when user changes
+    return () => {
+      if (unsubscribeUserPhotos) unsubscribeUserPhotos();
+      if (unsubscribePartnerPhotos) unsubscribePartnerPhotos();
+    };
+  }, [user]);
+
+  // Refresh photos manually (real-time listeners will automatically update)
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchPhotos();
+    // The real-time listeners will automatically update, so we just need to wait a moment
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
-  // Load photos on mount
-  useEffect(() => {
-    fetchPhotos();
-  }, [user]);
+  // Handle image load errors - filter out broken images
+  const handleImageError = (photo: Photo) => {
+    if (photo.id) {
+      setBrokenImageIds(prev => new Set(prev).add(photo.id!));
+    }
+  };
 
   // Format date header (Today, Yesterday, or formatted date)
   const formatDateHeader = (date: Date): string => {
@@ -217,8 +238,7 @@ const LoveHourScreen: React.FC = () => {
 
       if (result.success && result.downloadURL) {
         setUploadStatus('Upload successful!');
-        // Refresh photos after successful upload
-        await fetchPhotos();
+        // Real-time listeners will automatically update, no need to manually refresh
         Alert.alert(
           'Success',
           'Image uploaded successfully!',
@@ -261,8 +281,11 @@ const LoveHourScreen: React.FC = () => {
       );
     }
 
+    // Filter out broken images (images that failed to load)
+    const validPhotos = photos.filter(photo => !photo.id || !brokenImageIds.has(photo.id));
+
     // Group photos by date
-    const dateGroups = groupPhotosByDate(photos);
+    const dateGroups = groupPhotosByDate(validPhotos);
     
     // Ensure "Today" section exists if upload button should be shown
     const todayLabel = 'Today';
@@ -287,7 +310,7 @@ const LoveHourScreen: React.FC = () => {
     }
 
     // Check if we have any photos or sections
-    const hasPhotos = photos.length > 0;
+    const hasPhotos = validPhotos.length > 0;
     const hasSections = dateGroups.length > 0;
 
     if (!hasPhotos && !showUploadButton) {
@@ -311,7 +334,11 @@ const LoveHourScreen: React.FC = () => {
           onPress={() => handleImagePress(photo)}
           activeOpacity={0.8}
         >
-          <Image source={{ uri: photo.url }} style={styles.photoImage} />
+          <Image 
+            source={{ uri: photo.url }} 
+            style={styles.photoImage}
+            onError={() => handleImageError(photo)}
+          />
         </TouchableOpacity>
       ));
     };

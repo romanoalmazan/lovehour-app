@@ -456,7 +456,49 @@ export const subscribeToUserData = (
 };
 
 /**
- * Get user photos from Firestore subcollection
+ * Subscribe to user photos from Firestore subcollection with real-time updates
+ * @param userId - The user ID
+ * @param callback - Callback function that receives array of Photo objects
+ * @returns Unsubscribe function
+ */
+export const subscribeToUserPhotos = (
+  userId: string,
+  callback: (photos: Photo[]) => void
+): (() => void) => {
+  try {
+    const photosCollection = collection(db, 'users', userId, 'photos');
+    const photosQuery = query(photosCollection, orderBy('createdAt', 'desc'));
+    
+    return onSnapshot(
+      photosQuery,
+      (querySnapshot) => {
+        const photos: Photo[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          photos.push({
+            id: doc.id,
+            url: data.url,
+            caption: data.caption || '',
+            createdAt: data.createdAt
+          });
+        });
+        callback(photos);
+      },
+      (error) => {
+        console.error('Error subscribing to user photos:', error);
+        callback([]);
+      }
+    );
+  } catch (error: any) {
+    console.error('Error setting up photo subscription:', error);
+    callback([]);
+    // Return a no-op unsubscribe function
+    return () => {};
+  }
+};
+
+/**
+ * Get user photos from Firestore subcollection (one-time fetch)
  * @param userId - The user ID
  * @returns Promise with array of Photo objects, ordered by createdAt descending
  */
