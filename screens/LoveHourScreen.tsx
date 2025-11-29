@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -45,6 +45,237 @@ const PHOTO_SIZE = Math.floor((width - 63) / 3);
 
 type TabType = 'your' | 'partner';
 
+// Helper functions - defined outside component
+const formatDateHeader = (date: Date): string => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const compareDate = new Date(date);
+  compareDate.setHours(0, 0, 0, 0);
+  
+  if (compareDate.getTime() === today.getTime()) {
+    return 'Today';
+  } else if (compareDate.getTime() === yesterday.getTime()) {
+    return 'Yesterday';
+  } else {
+    return date.toLocaleDateString('en-US', { 
+      month: 'long', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  }
+};
+
+const groupPhotosByDate = (photos: Photo[]): Array<{ label: string; photos: Photo[]; dateKey: string }> => {
+  const groups: { [key: string]: Photo[] } = {};
+  
+  photos.forEach((photo) => {
+    if (!photo.createdAt) return;
+    
+    // Convert Firestore timestamp to Date
+    const photoDate = photo.createdAt.toDate ? photo.createdAt.toDate() : new Date(photo.createdAt);
+    
+    // Use local date (not UTC) to ensure correct date grouping
+    const year = photoDate.getFullYear();
+    const month = String(photoDate.getMonth() + 1).padStart(2, '0');
+    const day = String(photoDate.getDate()).padStart(2, '0');
+    const dateKey = `${year}-${month}-${day}`; // YYYY-MM-DD format using local date
+    
+    if (!groups[dateKey]) {
+      groups[dateKey] = [];
+    }
+    groups[dateKey].push(photo);
+  });
+  
+  // Convert to array and sort by date (newest first)
+  // Use Set to ensure unique dateKeys before mapping
+  const uniqueDateKeys = Array.from(new Set(Object.keys(groups)));
+  const sortedGroups = uniqueDateKeys
+    .map((dateKey) => {
+      // Parse dateKey as local date, not UTC
+      const [year, month, day] = dateKey.split('-').map(Number);
+      const photoDate = new Date(year, month - 1, day); // month is 0-indexed
+      return {
+        label: formatDateHeader(photoDate),
+        photos: groups[dateKey],
+        dateKey,
+        sortKey: photoDate.getTime(),
+      };
+    })
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .map(({ label, photos, dateKey }) => ({ label, photos, dateKey }));
+  
+  return sortedGroups;
+};
+
+// Memoized PhotoItem component - defined outside to prevent recreation
+const PhotoItem = memo(({ photo, onPress, onError }: {
+  photo: Photo;
+  onPress: () => void;
+  onError: () => void;
+}) => (
+  <TouchableOpacity
+    style={styles.photoItem}
+    onPress={onPress}
+    activeOpacity={0.8}
+  >
+    <Image 
+      source={{ uri: photo.url }} 
+      style={styles.photoImage}
+      onError={onError}
+    />
+  </TouchableOpacity>
+), (prevProps, nextProps) => {
+  // Only re-render if photo ID or URL changes
+  return prevProps.photo.id === nextProps.photo.id && 
+         prevProps.photo.url === nextProps.photo.url;
+});
+
+// PhotoGallery component - defined outside to prevent recreation
+const PhotoGallery = memo(({ 
+  photos, 
+  showUploadButton, 
+  brokenImageIdsArray, 
+  activeTab, 
+  canUpload, 
+  onPickImage, 
+  onImagePress, 
+  onImageError,
+  loadingPhotos 
+}: {
+  photos: Photo[];
+  showUploadButton?: boolean;
+  brokenImageIdsArray: string[]; // Use array instead of Set for stable comparison
+  activeTab: TabType;
+  canUpload: boolean;
+  onPickImage: (type: 'regular' | 'goodnight' | 'goodmorning') => void;
+  onImagePress: (photo: Photo) => void;
+  onImageError: (photo: Photo) => void;
+  loadingPhotos: boolean;
+}) => {
+  if (loadingPhotos) {
+    return (
+      <View style={styles.emptyContainer}>
+        <ActivityIndicator size="large" color="#D4A574" />
+        <Text style={styles.emptyText}>Loading photos...</Text>
+      </View>
+    );
+  }
+
+  // Convert array back to Set for filtering
+  const brokenImageIdsSet = useMemo(() => new Set(brokenImageIdsArray), [brokenImageIdsArray]);
+
+  // Memoize filtered photos to prevent recalculation on every render
+  const validPhotos = useMemo(() => 
+    photos.filter(photo => !photo.id || !brokenImageIdsSet.has(photo.id)),
+    [photos, brokenImageIdsSet]
+  );
+
+  // Memoize date groups to prevent recalculation
+  const dateGroups = useMemo(() => groupPhotosByDate(validPhotos), [validPhotos]);
+  
+  // Ensure "Today" section exists if upload button should be shown
+  const todayLabel = 'Today';
+  const todayGroupIndex = dateGroups.findIndex(group => group.label === todayLabel);
+  
+  const finalDateGroups = useMemo(() => {
+    if (showUploadButton && todayGroupIndex === -1) {
+      // Create empty "Today" section if it doesn't exist
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const todayDateKey = `${year}-${month}-${day}`;
+      
+      return [{
+        label: todayLabel,
+        photos: [],
+        dateKey: todayDateKey,
+      }, ...dateGroups];
+    }
+    return dateGroups;
+  }, [dateGroups, showUploadButton, todayGroupIndex]);
+
+  // Check if we have any photos or sections
+  const hasPhotos = validPhotos.length > 0;
+  const hasSections = finalDateGroups.length > 0;
+
+  if (!hasPhotos && !showUploadButton) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>
+          {activeTab === 'your' 
+            ? "You haven't uploaded any photos yet" 
+            : "Your partner hasn't uploaded any photos yet"}
+        </Text>
+      </View>
+    );
+  }
+
+  // Render a section with photos in 3-column grid
+  const renderPhotoGrid = useCallback((sectionPhotos: Photo[]) => {
+    return sectionPhotos.map((photo, index) => (
+      <PhotoItem
+        key={photo.id || `${photo.url}-${index}`}
+        photo={photo}
+        onPress={() => onImagePress(photo)}
+        onError={() => onImageError(photo)}
+      />
+    ));
+  }, [onImagePress, onImageError]);
+
+  return (
+    <View style={styles.galleryContainer}>
+      {finalDateGroups.map((group, groupIndex) => (
+        <View key={`date-section-${activeTab}-${groupIndex}-${group.dateKey}`} style={styles.dateSection}>
+          <Text style={styles.dateSectionHeader}>{group.label}</Text>
+          <View style={styles.photoGrid}>
+            {/* Add upload button in "Today" section if needed */}
+            {showUploadButton && group.label === todayLabel && (
+              <TouchableOpacity
+                style={[styles.uploadButtonItem, !canUpload && styles.uploadButtonItemDisabled]}
+                onPress={() => onPickImage('regular')}
+                activeOpacity={0.8}
+                disabled={!canUpload}
+              >
+                <View style={styles.uploadButtonContent}>
+                  <Text style={styles.uploadButtonIcon}>+</Text>
+                  <Text style={styles.uploadButtonText}>Send Update</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            {/* Render photos in this section */}
+            {renderPhotoGrid(group.photos)}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  if (prevProps.loadingPhotos !== nextProps.loadingPhotos) return false;
+  if (prevProps.photos.length !== nextProps.photos.length) return false;
+  if (prevProps.brokenImageIdsArray.length !== nextProps.brokenImageIdsArray.length) return false;
+  if (prevProps.showUploadButton !== nextProps.showUploadButton) return false;
+  if (prevProps.activeTab !== nextProps.activeTab) return false;
+  if (prevProps.canUpload !== nextProps.canUpload) return false;
+  
+  // Check if photos array actually changed
+  const prevPhotoIds = prevProps.photos.map(p => p.id).join(',');
+  const nextPhotoIds = nextProps.photos.map(p => p.id).join(',');
+  if (prevPhotoIds !== nextPhotoIds) return false;
+  
+  // Check if brokenImageIds changed (compare sorted arrays)
+  const prevBroken = [...prevProps.brokenImageIdsArray].sort().join(',');
+  const nextBroken = [...nextProps.brokenImageIdsArray].sort().join(',');
+  if (prevBroken !== nextBroken) return false;
+  
+  return true; // Props are equal, skip re-render
+});
+
 const LoveHourScreen: React.FC = () => {
   const { user, signOut } = useAuth();
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
@@ -61,8 +292,9 @@ const LoveHourScreen: React.FC = () => {
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Track broken images (images that fail to load)
+  // Track broken images (images that fail to load) - use array for stable reference
   const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
+  const brokenImageIdsArray = useMemo(() => Array.from(brokenImageIds), [brokenImageIds]);
   
   // Image viewer modal state
   const [viewingImage, setViewingImage] = useState<Photo | null>(null);
@@ -135,11 +367,15 @@ const LoveHourScreen: React.FC = () => {
   };
 
   // Handle image load errors - filter out broken images
-  const handleImageError = (photo: Photo) => {
-    if (photo.id) {
-      setBrokenImageIds(prev => new Set(prev).add(photo.id!));
+  const handleImageError = useCallback((photo: Photo) => {
+    if (photo.id && !brokenImageIds.has(photo.id)) {
+      setBrokenImageIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(photo.id!);
+        return newSet;
+      });
     }
-  };
+  }, [brokenImageIds]);
 
   // Check upload status and update state
   const checkUploadStatus = async () => {
@@ -193,72 +429,6 @@ const LoveHourScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Format date header (Today, Yesterday, or formatted date)
-  const formatDateHeader = (date: Date): string => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const compareDate = new Date(date);
-    compareDate.setHours(0, 0, 0, 0);
-    
-    if (compareDate.getTime() === today.getTime()) {
-      return 'Today';
-    } else if (compareDate.getTime() === yesterday.getTime()) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString('en-US', { 
-        month: 'long', 
-        day: 'numeric', 
-        year: 'numeric' 
-      });
-    }
-  };
-
-  // Group photos by date
-  const groupPhotosByDate = (photos: Photo[]): Array<{ label: string; photos: Photo[]; dateKey: string }> => {
-    const groups: { [key: string]: Photo[] } = {};
-    
-    photos.forEach((photo) => {
-      if (!photo.createdAt) return;
-      
-      // Convert Firestore timestamp to Date
-      const photoDate = photo.createdAt.toDate ? photo.createdAt.toDate() : new Date(photo.createdAt);
-      
-      // Use local date (not UTC) to ensure correct date grouping
-      const year = photoDate.getFullYear();
-      const month = String(photoDate.getMonth() + 1).padStart(2, '0');
-      const day = String(photoDate.getDate()).padStart(2, '0');
-      const dateKey = `${year}-${month}-${day}`; // YYYY-MM-DD format using local date
-      
-      if (!groups[dateKey]) {
-        groups[dateKey] = [];
-      }
-      groups[dateKey].push(photo);
-    });
-    
-    // Convert to array and sort by date (newest first)
-    // Use Set to ensure unique dateKeys before mapping
-    const uniqueDateKeys = Array.from(new Set(Object.keys(groups)));
-    const sortedGroups = uniqueDateKeys
-      .map((dateKey) => {
-        // Parse dateKey as local date, not UTC
-        const [year, month, day] = dateKey.split('-').map(Number);
-        const photoDate = new Date(year, month - 1, day); // month is 0-indexed
-        return {
-          label: formatDateHeader(photoDate),
-          photos: groups[dateKey],
-          dateKey,
-          sortKey: photoDate.getTime(),
-        };
-      })
-      .sort((a, b) => b.sortKey - a.sortKey)
-      .map(({ label, photos, dateKey }) => ({ label, photos, dateKey }));
-    
-    return sortedGroups;
-  };
 
   const pickImage = async (type: 'regular' | 'goodnight' | 'goodmorning' = 'regular') => {
     // Request permissions
@@ -389,115 +559,14 @@ const LoveHourScreen: React.FC = () => {
     }
   };
 
-  // PhotoGallery component
-  const PhotoGallery = ({ photos, showUploadButton }: { photos: Photo[]; showUploadButton?: boolean }) => {
-    if (loadingPhotos) {
-      return (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#D4A574" />
-          <Text style={styles.emptyText}>Loading photos...</Text>
-        </View>
-      );
-    }
-
-    // Filter out broken images (images that failed to load)
-    const validPhotos = photos.filter(photo => !photo.id || !brokenImageIds.has(photo.id));
-
-    // Group photos by date
-    const dateGroups = groupPhotosByDate(validPhotos);
-    
-    // Ensure "Today" section exists if upload button should be shown
-    const todayLabel = 'Today';
-    const todayGroupIndex = dateGroups.findIndex(group => group.label === todayLabel);
-    
-    if (showUploadButton) {
-      if (todayGroupIndex === -1) {
-        // Create empty "Today" section if it doesn't exist
-        // Use local date (not UTC) for dateKey
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const todayDateKey = `${year}-${month}-${day}`;
-        
-        dateGroups.unshift({
-          label: todayLabel,
-          photos: [],
-          dateKey: todayDateKey,
-        });
-      }
-    }
-
-    // Check if we have any photos or sections
-    const hasPhotos = validPhotos.length > 0;
-    const hasSections = dateGroups.length > 0;
-
-    if (!hasPhotos && !showUploadButton) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>
-            {activeTab === 'your' 
-              ? "You haven't uploaded any photos yet" 
-              : "Your partner hasn't uploaded any photos yet"}
-          </Text>
-        </View>
-      );
-    }
-
-    // Render a section with photos in 3-column grid
-    const renderPhotoGrid = (sectionPhotos: Photo[]) => {
-      return sectionPhotos.map((photo, index) => (
-        <TouchableOpacity
-          key={photo.id || `${photo.url}-${index}`}
-          style={styles.photoItem}
-          onPress={() => handleImagePress(photo)}
-          activeOpacity={0.8}
-        >
-          <Image 
-            source={{ uri: photo.url }} 
-            style={styles.photoImage}
-            onError={() => handleImageError(photo)}
-          />
-        </TouchableOpacity>
-      ));
-    };
-
-    return (
-      <View style={styles.galleryContainer}>
-        {dateGroups.map((group, groupIndex) => (
-          <View key={`date-section-${activeTab}-${groupIndex}-${group.dateKey}`} style={styles.dateSection}>
-            <Text style={styles.dateSectionHeader}>{group.label}</Text>
-            <View style={styles.photoGrid}>
-              {/* Add upload button in "Today" section if needed */}
-              {showUploadButton && group.label === todayLabel && (
-                <TouchableOpacity
-                  style={[styles.uploadButtonItem, !canUpload && styles.uploadButtonItemDisabled]}
-                  onPress={() => pickImage('regular')}
-                  activeOpacity={0.8}
-                  disabled={!canUpload}
-                >
-                  <View style={styles.uploadButtonContent}>
-                    <Text style={styles.uploadButtonIcon}>+</Text>
-                    <Text style={styles.uploadButtonText}>Send Update</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-              {/* Render photos in this section */}
-              {renderPhotoGrid(group.photos)}
-            </View>
-          </View>
-        ))}
-      </View>
-    );
-  };
 
   const currentPhotos = activeTab === 'your' ? userPhotos : partnerPhotos;
 
   // Handle image click to open modal
-  const handleImagePress = (photo: Photo) => {
+  const handleImagePress = useCallback((photo: Photo) => {
     setViewingImage(photo);
     setModalVisible(true);
-  };
+  }, []);
 
   // Close modal
   const closeModal = () => {
@@ -588,7 +657,17 @@ const LoveHourScreen: React.FC = () => {
 
         {/* Photo Gallery */}
         <View style={styles.gallerySection}>
-          <PhotoGallery photos={currentPhotos} showUploadButton={activeTab === 'your'} />
+          <PhotoGallery 
+            photos={currentPhotos} 
+            showUploadButton={activeTab === 'your'}
+            brokenImageIdsArray={brokenImageIdsArray}
+            activeTab={activeTab}
+            canUpload={canUpload}
+            onPickImage={pickImage}
+            onImagePress={handleImagePress}
+            onImageError={handleImageError}
+            loadingPhotos={loadingPhotos}
+          />
         </View>
 
         <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
