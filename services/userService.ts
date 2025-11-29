@@ -36,6 +36,10 @@ export interface UserData {
   fullName?: string;
   gender?: 'male' | 'female' | 'other';
   photos?: string[];
+  isAwake?: boolean;
+  lastUploadHour?: number | null;
+  lastGoodnightTime?: any | null;
+  lastGoodmorningTime?: any | null;
 }
 
 export interface Photo {
@@ -602,6 +606,258 @@ export const uploadUserImage = async (
     return {
       success: false,
       error: error.message || 'Failed to upload image'
+    };
+  }
+};
+
+/**
+ * Get current hour window (0-23) based on local time
+ * @returns Current hour (0-23)
+ */
+export const getCurrentHourWindow = (): number => {
+  return new Date().getHours();
+};
+
+/**
+ * Get milliseconds until next hour window starts
+ * @returns Milliseconds until next hour
+ */
+export const getTimeUntilNextHour = (): number => {
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+  return nextHour.getTime() - now.getTime();
+};
+
+/**
+ * Check if user can upload in the current hour window
+ * @param userId - The user ID
+ * @returns Promise with canUpload status and reason if not allowed
+ */
+export const canUploadInCurrentHour = async (userId: string): Promise<{ canUpload: boolean; reason?: string }> => {
+  try {
+    const userData = await getUserData(userId);
+    
+    if (!userData) {
+      return { canUpload: false, reason: 'User data not found' };
+    }
+
+    // Check if user is awake
+    if (userData.isAwake === false) {
+      return { canUpload: false, reason: 'You are currently asleep. Send a good morning update to start your day!' };
+    }
+
+    // If user hasn't set awake status, default to awake
+    const isAwake = userData.isAwake !== false;
+
+    // If not awake, can't upload
+    if (!isAwake) {
+      return { canUpload: false, reason: 'You are currently asleep. Send a good morning update to start your day!' };
+    }
+
+    // Get current hour window
+    const currentHour = getCurrentHourWindow();
+
+    // If user hasn't uploaded yet, or lastUploadHour is null, they can upload
+    if (userData.lastUploadHour === null || userData.lastUploadHour === undefined) {
+      return { canUpload: true };
+    }
+
+    // Check if user already uploaded in current hour window
+    if (userData.lastUploadHour === currentHour) {
+      return { 
+        canUpload: false, 
+        reason: `You've already uploaded a photo this hour. Next upload available at ${(currentHour + 1) % 24}:00` 
+      };
+    }
+
+    // User can upload (different hour window)
+    return { canUpload: true };
+  } catch (error: any) {
+    console.error('Error checking upload status:', error);
+    return { canUpload: false, reason: 'Error checking upload status' };
+  }
+};
+
+/**
+ * Update user's last upload hour after successful upload
+ * @param userId - The user ID
+ * @param hour - The hour window (0-23) of the upload
+ */
+export const updateLastUploadHour = async (userId: string, hour: number): Promise<void> => {
+  try {
+    await ensureFirestoreReady();
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      lastUploadHour: hour
+    });
+  } catch (error: any) {
+    console.error('Error updating last upload hour:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send goodnight update (upload photo and set user to asleep)
+ * @param userId - The user ID
+ * @param imageUri - Local URI of the image to upload
+ * @param caption - Required caption for the image
+ * @returns Promise with success status
+ */
+export const sendGoodnightUpdate = async (
+  userId: string,
+  imageUri: string,
+  caption: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Validate caption
+    if (!caption || caption.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Caption is required'
+      };
+    }
+
+    await ensureFirestoreReady();
+
+    // 1. Convert URI to Blob
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    // 2. Create a reference to the file in Firebase Storage
+    const timestamp = Date.now();
+    const filename = `users/${userId}/images/${timestamp}.jpg`;
+    const storageRef = ref(storage, filename);
+
+    // 3. Upload the file
+    const uploadTask = uploadBytesResumable(storageRef, blob);
+
+    // Wait for upload to complete
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Upload progress:', Math.round(progress) + '%');
+        },
+        (error) => {
+          console.error('Upload error:', error);
+          reject(error);
+        },
+        async () => {
+          resolve();
+        }
+      );
+    });
+
+    // 4. Get the download URL
+    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+    // 5. Save to Firestore subcollection with caption
+    const photosCollection = collection(db, 'users', userId, 'photos');
+    await addDoc(photosCollection, {
+      url: downloadURL,
+      caption: caption.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    // 6. Update user document: set isAwake to false, update lastGoodnightTime, reset lastUploadHour
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      isAwake: false,
+      lastGoodnightTime: serverTimestamp(),
+      lastUploadHour: null
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error sending goodnight update:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to send goodnight update'
+    };
+  }
+};
+
+/**
+ * Send goodmorning update (upload photo and set user to awake)
+ * @param userId - The user ID
+ * @param imageUri - Local URI of the image to upload
+ * @param caption - Required caption for the image
+ * @returns Promise with success status
+ */
+export const sendGoodmorningUpdate = async (
+  userId: string,
+  imageUri: string,
+  caption: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Validate caption
+    if (!caption || caption.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Caption is required'
+      };
+    }
+
+    await ensureFirestoreReady();
+
+    // 1. Convert URI to Blob
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    // 2. Create a reference to the file in Firebase Storage
+    const timestamp = Date.now();
+    const filename = `users/${userId}/images/${timestamp}.jpg`;
+    const storageRef = ref(storage, filename);
+
+    // 3. Upload the file
+    const uploadTask = uploadBytesResumable(storageRef, blob);
+
+    // Wait for upload to complete
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Upload progress:', Math.round(progress) + '%');
+        },
+        (error) => {
+          console.error('Upload error:', error);
+          reject(error);
+        },
+        async () => {
+          resolve();
+        }
+      );
+    });
+
+    // 4. Get the download URL
+    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+    // 5. Save to Firestore subcollection with caption
+    const photosCollection = collection(db, 'users', userId, 'photos');
+    await addDoc(photosCollection, {
+      url: downloadURL,
+      caption: caption.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    // 6. Update user document: set isAwake to true, update lastGoodmorningTime, set lastUploadHour to current hour
+    const currentHour = getCurrentHourWindow();
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      isAwake: true,
+      lastGoodmorningTime: serverTimestamp(),
+      lastUploadHour: currentHour
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error sending goodmorning update:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to send goodmorning update'
     };
   }
 };

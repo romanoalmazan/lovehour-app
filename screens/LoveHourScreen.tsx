@@ -17,7 +17,20 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
-import { uploadUserImage, getUserData, verifyMutualMatch, subscribeToUserPhotos, Photo } from '../services/userService';
+import { 
+  uploadUserImage, 
+  getUserData, 
+  verifyMutualMatch, 
+  subscribeToUserPhotos, 
+  subscribeToUserData,
+  canUploadInCurrentHour,
+  updateLastUploadHour,
+  sendGoodnightUpdate,
+  sendGoodmorningUpdate,
+  getCurrentHourWindow,
+  getTimeUntilNextHour,
+  Photo 
+} from '../services/userService';
 
 const { width } = Dimensions.get('window');
 // Calculate photo size for 3-column grid
@@ -57,6 +70,13 @@ const LoveHourScreen: React.FC = () => {
   
   // Upload modal state
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [uploadType, setUploadType] = useState<'regular' | 'goodnight' | 'goodmorning'>('regular');
+
+  // Hourly upload system state
+  const [isAwake, setIsAwake] = useState<boolean | null>(null);
+  const [canUpload, setCanUpload] = useState(true);
+  const [timeUntilNextHour, setTimeUntilNextHour] = useState(0);
+  const [uploadRestrictionReason, setUploadRestrictionReason] = useState<string | null>(null);
 
   // Set up real-time photo subscriptions
   useEffect(() => {
@@ -120,6 +140,58 @@ const LoveHourScreen: React.FC = () => {
       setBrokenImageIds(prev => new Set(prev).add(photo.id!));
     }
   };
+
+  // Check upload status and update state
+  const checkUploadStatus = async () => {
+    if (!user) return;
+
+    try {
+      const status = await canUploadInCurrentHour(user.uid);
+      setCanUpload(status.canUpload);
+      setUploadRestrictionReason(status.reason || null);
+    } catch (error: any) {
+      console.error('Error checking upload status:', error);
+    }
+  };
+
+  // Subscribe to user data changes for awake status
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = subscribeToUserData(user.uid, (userData) => {
+      if (userData) {
+        // Update awake status (default to true if not set)
+        setIsAwake(userData.isAwake !== false);
+        // Check upload status when user data changes
+        checkUploadStatus();
+      } else {
+        setIsAwake(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Check upload status on mount and when user changes
+  useEffect(() => {
+    checkUploadStatus();
+  }, [user]);
+
+  // Countdown timer that updates every second
+  useEffect(() => {
+    const updateTimer = () => {
+      const timeMs = getTimeUntilNextHour();
+      setTimeUntilNextHour(Math.floor(timeMs / 1000)); // Convert to seconds
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Update every second
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Format date header (Today, Yesterday, or formatted date)
   const formatDateHeader = (date: Date): string => {
@@ -188,7 +260,7 @@ const LoveHourScreen: React.FC = () => {
     return sortedGroups;
   };
 
-  const pickImage = async () => {
+  const pickImage = async (type: 'regular' | 'goodnight' | 'goodmorning' = 'regular') => {
     // Request permissions
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -210,12 +282,21 @@ const LoveHourScreen: React.FC = () => {
         setSelectedImage(result.assets[0].uri);
         setUploadStatus('');
         setCaption('');
+        setUploadType(type);
         setUploadModalVisible(true);
       }
     } catch (error: any) {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
+  };
+
+  const handleGoodnight = () => {
+    pickImage('goodnight');
+  };
+
+  const handleGoodmorning = () => {
+    pickImage('goodmorning');
   };
 
   const uploadImage = async () => {
@@ -230,18 +311,55 @@ const LoveHourScreen: React.FC = () => {
       return;
     }
 
+    // Validate hourly restrictions for regular uploads
+    if (uploadType === 'regular') {
+      const status = await canUploadInCurrentHour(user.uid);
+      if (!status.canUpload) {
+        Alert.alert(
+          'Upload Restricted',
+          status.reason || 'You cannot upload at this time.'
+        );
+        return;
+      }
+    }
+
     setUploading(true);
     setUploadStatus('Uploading...');
 
     try {
-      const result = await uploadUserImage(user.uid, selectedImage, caption);
+      let result;
+      
+      // Handle different upload types
+      if (uploadType === 'goodnight') {
+        result = await sendGoodnightUpdate(user.uid, selectedImage, caption);
+      } else if (uploadType === 'goodmorning') {
+        result = await sendGoodmorningUpdate(user.uid, selectedImage, caption);
+      } else {
+        // Regular upload
+        result = await uploadUserImage(user.uid, selectedImage, caption);
+        
+        // Update last upload hour after successful regular upload
+        if (result.success) {
+          const currentHour = getCurrentHourWindow();
+          await updateLastUploadHour(user.uid, currentHour);
+        }
+      }
 
-      if (result.success && result.downloadURL) {
+      if (result.success) {
         setUploadStatus('Upload successful!');
-        // Real-time listeners will automatically update, no need to manually refresh
+        
+        // Refresh upload status
+        await checkUploadStatus();
+        
+        const successMessage = uploadType === 'goodnight' 
+          ? 'Goodnight update sent! Sleep well!'
+          : uploadType === 'goodmorning'
+          ? 'Good morning update sent! Have a great day!'
+          : 'Image uploaded successfully!';
+        
         Alert.alert(
           'Success',
-          'Image uploaded successfully!',
+          successMessage,
           [
             {
               text: 'OK',
@@ -250,6 +368,7 @@ const LoveHourScreen: React.FC = () => {
                 setCaption('');
                 setUploadStatus('');
                 setUploadModalVisible(false);
+                setUploadType('regular');
               },
             },
           ]
@@ -352,9 +471,10 @@ const LoveHourScreen: React.FC = () => {
               {/* Add upload button in "Today" section if needed */}
               {showUploadButton && group.label === todayLabel && (
                 <TouchableOpacity
-                  style={styles.uploadButtonItem}
-                  onPress={pickImage}
+                  style={[styles.uploadButtonItem, !canUpload && styles.uploadButtonItemDisabled]}
+                  onPress={() => pickImage('regular')}
                   activeOpacity={0.8}
+                  disabled={!canUpload}
                 >
                   <View style={styles.uploadButtonContent}>
                     <Text style={styles.uploadButtonIcon}>+</Text>
@@ -401,6 +521,49 @@ const LoveHourScreen: React.FC = () => {
         <View style={styles.header}>
           <Text style={styles.title}>LoveHour</Text>
           <Text style={styles.subtitle}>Welcome, {displayName}</Text>
+          
+          {/* Status Indicator and Countdown Timer */}
+          <View style={styles.statusContainer}>
+            {isAwake !== null && (
+              <View style={[styles.statusBadge, isAwake ? styles.awakeBadge : styles.asleepBadge]}>
+                <Text style={styles.statusText}>
+                  {isAwake ? '🌅 Awake' : '🌙 Asleep'}
+                </Text>
+              </View>
+            )}
+            {isAwake && (
+              <View style={styles.timerContainer}>
+                <Text style={styles.timerText}>
+                  Next upload in: {Math.floor(timeUntilNextHour / 60)}:{(timeUntilNextHour % 60).toString().padStart(2, '0')}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Goodnight/Goodmorning Buttons */}
+          {isAwake === true && (
+            <TouchableOpacity
+              style={styles.goodnightButton}
+              onPress={handleGoodnight}
+            >
+              <Text style={styles.goodnightButtonText}>🌙 Send Goodnight</Text>
+            </TouchableOpacity>
+          )}
+          {isAwake === false && (
+            <TouchableOpacity
+              style={styles.goodmorningButton}
+              onPress={handleGoodmorning}
+            >
+              <Text style={styles.goodmorningButtonText}>🌅 Send Good Morning</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Upload Restriction Message */}
+          {!canUpload && uploadRestrictionReason && (
+            <View style={styles.restrictionContainer}>
+              <Text style={styles.restrictionText}>{uploadRestrictionReason}</Text>
+            </View>
+          )}
         </View>
 
         {/* Tabs */}
@@ -442,17 +605,25 @@ const LoveHourScreen: React.FC = () => {
           setUploadModalVisible(false);
           setSelectedImage(null);
           setCaption('');
+          setUploadType('regular');
         }}
       >
         <View style={styles.uploadModalContainer}>
           <View style={styles.uploadModalContent}>
             <View style={styles.uploadModalHeader}>
-              <Text style={styles.uploadModalTitle}>Send Update</Text>
+              <Text style={styles.uploadModalTitle}>
+                {uploadType === 'goodnight' 
+                  ? 'Send Goodnight' 
+                  : uploadType === 'goodmorning'
+                  ? 'Send Good Morning'
+                  : 'Send Update'}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   setUploadModalVisible(false);
                   setSelectedImage(null);
                   setCaption('');
+                  setUploadType('regular');
                 }}
               >
                 <Text style={styles.uploadModalClose}>✕</Text>
@@ -927,6 +1098,99 @@ const styles = StyleSheet.create({
     color: '#8B6F47',
     fontSize: 14,
     fontWeight: '600',
+  },
+  statusContainer: {
+    marginTop: 15,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  statusBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 8,
+  },
+  awakeBadge: {
+    backgroundColor: '#D4A574',
+  },
+  asleepBadge: {
+    backgroundColor: '#6B5B4A',
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timerContainer: {
+    marginTop: 5,
+  },
+  timerText: {
+    fontSize: 14,
+    color: '#8B6F47',
+    fontWeight: '600',
+  },
+  goodnightButton: {
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#6B5B4A',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
+    alignItems: 'center',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  goodnightButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  goodmorningButton: {
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
+    alignItems: 'center',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  goodmorningButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  restrictionContainer: {
+    marginTop: 10,
+    padding: 12,
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ffc107',
+  },
+  restrictionText: {
+    fontSize: 13,
+    color: '#856404',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  uploadButtonItemDisabled: {
+    opacity: 0.5,
   },
 });
 
