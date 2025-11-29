@@ -156,15 +156,7 @@ const PhotoGallery = memo(({
   onImageError: (photo: Photo) => void;
   loadingPhotos: boolean;
 }) => {
-  if (loadingPhotos) {
-    return (
-      <View style={styles.emptyContainer}>
-        <ActivityIndicator size="large" color="#D4A574" />
-        <Text style={styles.emptyText}>Loading photos...</Text>
-      </View>
-    );
-  }
-
+  // ALL HOOKS MUST BE CALLED FIRST - before any conditional returns
   // Convert array back to Set for filtering
   const brokenImageIdsSet = useMemo(() => new Set(brokenImageIdsArray), [brokenImageIdsArray]);
 
@@ -199,6 +191,28 @@ const PhotoGallery = memo(({
     return dateGroups;
   }, [dateGroups, showUploadButton, todayGroupIndex]);
 
+  // Render a section with photos in 3-column grid
+  const renderPhotoGrid = useCallback((sectionPhotos: Photo[]) => {
+    return sectionPhotos.map((photo, index) => (
+      <PhotoItem
+        key={photo.id || `${photo.url}-${index}`}
+        photo={photo}
+        onPress={() => onImagePress(photo)}
+        onError={() => onImageError(photo)}
+      />
+    ));
+  }, [onImagePress, onImageError]);
+
+  // NOW we can do conditional returns after all hooks are called
+  if (loadingPhotos) {
+    return (
+      <View style={styles.emptyContainer}>
+        <ActivityIndicator size="large" color="#D4A574" />
+        <Text style={styles.emptyText}>Loading photos...</Text>
+      </View>
+    );
+  }
+
   // Check if we have any photos or sections
   const hasPhotos = validPhotos.length > 0;
   const hasSections = finalDateGroups.length > 0;
@@ -214,18 +228,6 @@ const PhotoGallery = memo(({
       </View>
     );
   }
-
-  // Render a section with photos in 3-column grid
-  const renderPhotoGrid = useCallback((sectionPhotos: Photo[]) => {
-    return sectionPhotos.map((photo, index) => (
-      <PhotoItem
-        key={photo.id || `${photo.url}-${index}`}
-        photo={photo}
-        onPress={() => onImagePress(photo)}
-        onError={() => onImageError(photo)}
-      />
-    ));
-  }, [onImagePress, onImageError]);
 
   return (
     <View style={styles.galleryContainer}>
@@ -378,7 +380,7 @@ const LoveHourScreen: React.FC = () => {
   }, [brokenImageIds]);
 
   // Check upload status and update state
-  const checkUploadStatus = async () => {
+  const checkUploadStatus = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -388,7 +390,7 @@ const LoveHourScreen: React.FC = () => {
     } catch (error: any) {
       console.error('Error checking upload status:', error);
     }
-  };
+  }, [user]);
 
   // Subscribe to user data changes for awake status
   useEffect(() => {
@@ -406,12 +408,12 @@ const LoveHourScreen: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, checkUploadStatus]);
 
   // Check upload status on mount and when user changes
   useEffect(() => {
     checkUploadStatus();
-  }, [user]);
+  }, [checkUploadStatus]);
 
   // Countdown timer that updates every second
   useEffect(() => {
