@@ -5,10 +5,10 @@
     "scheme": "lovehour",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./components/images/lovehour-logo.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./components/images/lovehour-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -46,7 +46,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./components/images/lovehour-logo.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.lovehour.app",
@@ -60,7 +60,7 @@
       "usesCleartextTraffic": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./components/images/lovehour-logo.png"
     }
   }
 }
