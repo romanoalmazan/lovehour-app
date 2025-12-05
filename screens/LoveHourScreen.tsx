@@ -434,18 +434,18 @@ const LoveHourScreen: React.FC = () => {
 
   const pickImage = async (type: 'regular' | 'goodnight' | 'goodmorning' = 'regular') => {
     // Request permissions
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(
         'Permission Required',
-        'Sorry, we need camera roll permissions to upload images!'
+        'Sorry, we need camera permissions to take photos!'
       );
       return;
     }
 
     try {
-      // Launch image picker
-      const result = await ImagePicker.launchImageLibraryAsync({
+      // Launch camera
+      const result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
         quality: 1,
       });
@@ -458,8 +458,8 @@ const LoveHourScreen: React.FC = () => {
         setUploadModalVisible(true);
       }
     } catch (error: any) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
     }
   };
 
@@ -717,7 +717,7 @@ const LoveHourScreen: React.FC = () => {
                   <Image source={{ uri: selectedImage }} style={styles.uploadImagePreview} />
                   <TouchableOpacity
                     style={styles.changeImageButton}
-                    onPress={pickImage}
+                    onPress={() => pickImage(uploadType)}
                     disabled={uploading}
                   >
                     <Text style={styles.changeImageText}>Change Image</Text>
@@ -741,7 +741,7 @@ const LoveHourScreen: React.FC = () => {
                 </View>
 
                 {uploadStatus && (
-                  <Text style={styles.statusText}>{uploadStatus}</Text>
+                  <Text style={styles.uploadStatusText}>{uploadStatus}</Text>
                 )}
 
                 <TouchableOpacity
@@ -1000,7 +1000,7 @@ const styles = StyleSheet.create({
   spinner: {
     marginRight: 0,
   },
-  statusText: {
+  uploadStatusText: {
     marginTop: 10,
     fontSize: 14,
     color: '#6B5B4A',
