@@ -14,10 +14,11 @@ import {
   enableNetwork,
   runTransaction,
   arrayUnion,
-  orderBy
+  orderBy,
+  deleteDoc
 } from 'firebase/firestore';
 import { db, storage, ensureFirestoreNetwork } from '../config/firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { generateFriendCode } from '../utils/friendCodeGenerator';
 
 /**
@@ -611,6 +612,78 @@ export const uploadUserImage = async (
 };
 
 /**
+ * Delete user photo from both Firestore and Firebase Storage
+ * @param userId - The user ID
+ * @param photoId - The photo document ID
+ * @returns Promise with success status or error
+ */
+export const deleteUserPhoto = async (
+  userId: string,
+  photoId: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await ensureFirestoreReady();
+
+    // 1. Get the photo document to retrieve the storage URL
+    const photoRef = doc(db, 'users', userId, 'photos', photoId);
+    const photoSnap = await getDoc(photoRef);
+
+    if (!photoSnap.exists()) {
+      return {
+        success: false,
+        error: 'Photo not found'
+      };
+    }
+
+    const photoData = photoSnap.data();
+    const photoUrl = photoData.url;
+
+    // 2. Extract storage path from the download URL
+    // Firebase Storage URLs have format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encodedPath}?alt=media&token={token}
+    let storagePath: string | null = null;
+    
+    try {
+      // Try to extract path from URL
+      const urlObj = new URL(photoUrl);
+      const pathMatch = urlObj.pathname.match(/\/o\/(.+)\?/);
+      if (pathMatch && pathMatch[1]) {
+        // Decode the path (it's URL encoded)
+        storagePath = decodeURIComponent(pathMatch[1]);
+      }
+    } catch (urlError) {
+      console.warn('Could not parse storage URL:', urlError);
+    }
+
+    // 3. Delete from Storage if we have a valid path
+    if (storagePath) {
+      try {
+        const storageRef = ref(storage, storagePath);
+        await deleteObject(storageRef);
+        console.log('Successfully deleted from Storage:', storagePath);
+      } catch (storageError: any) {
+        // If file doesn't exist in Storage, that's okay - continue with Firestore deletion
+        if (storageError.code !== 'storage/object-not-found') {
+          console.warn('Error deleting from Storage (continuing with Firestore deletion):', storageError);
+        }
+      }
+    } else {
+      console.warn('Could not extract storage path from URL, skipping Storage deletion');
+    }
+
+    // 4. Delete from Firestore
+    await deleteDoc(photoRef);
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error deleting photo:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to delete photo'
+    };
+  }
+};
+
+/**
  * Get current hour window (0-23) based on local time
  * @returns Current hour (0-23)
  */
@@ -647,13 +720,7 @@ export const canUploadInCurrentHour = async (userId: string): Promise<{ canUploa
       return { canUpload: false, reason: 'You are currently asleep. Send a good morning update to start your day!' };
     }
 
-    // If user hasn't set awake status, default to awake
-    const isAwake = userData.isAwake !== false;
-
-    // If not awake, can't upload
-    if (!isAwake) {
-      return { canUpload: false, reason: 'You are currently asleep. Send a good morning update to start your day!' };
-    }
+    // If user hasn't set awake status, default to awake (isAwake is true or undefined, both allow upload)
 
     // Get current hour window
     const currentHour = getCurrentHourWindow();

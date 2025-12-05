@@ -29,6 +29,7 @@ import {
   sendGoodmorningUpdate,
   getCurrentHourWindow,
   getTimeUntilNextHour,
+  deleteUserPhoto,
   Photo 
 } from '../services/userService';
 
@@ -301,6 +302,7 @@ const LoveHourScreen: React.FC = () => {
   // Image viewer modal state
   const [viewingImage, setViewingImage] = useState<Photo | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
   
   // Upload modal state
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
@@ -564,11 +566,59 @@ const LoveHourScreen: React.FC = () => {
 
   const currentPhotos = activeTab === 'your' ? userPhotos : partnerPhotos;
 
+  // Check if viewing image belongs to current user
+  const isViewingOwnPhoto = useMemo(() => {
+    if (!viewingImage || !viewingImage.id) return false;
+    return userPhotos.some(photo => photo.id === viewingImage.id);
+  }, [viewingImage, userPhotos]);
+
   // Handle image click to open modal
   const handleImagePress = useCallback((photo: Photo) => {
     setViewingImage(photo);
     setModalVisible(true);
   }, []);
+
+  // Handle photo deletion
+  const handleDeletePhoto = useCallback(async () => {
+    if (!viewingImage || !viewingImage.id || !user) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete Update',
+      'Are you sure you want to delete this update? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingPhoto(true);
+            try {
+              const result = await deleteUserPhoto(user.uid, viewingImage.id!);
+              
+              if (result.success) {
+                // Close modal - the real-time subscription will automatically update the UI
+                setModalVisible(false);
+                setViewingImage(null);
+                Alert.alert('Success', 'Update deleted successfully');
+              } else {
+                Alert.alert('Error', result.error || 'Failed to delete update');
+              }
+            } catch (error: any) {
+              console.error('Error deleting photo:', error);
+              Alert.alert('Error', error.message || 'Failed to delete update');
+            } finally {
+              setDeletingPhoto(false);
+            }
+          }
+        }
+      ]
+    );
+  }, [viewingImage, user]);
 
   // Close modal
   const closeModal = () => {
@@ -777,9 +827,24 @@ const LoveHourScreen: React.FC = () => {
       >
         <Pressable style={styles.modalContainer} onPress={closeModal}>
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={closeModal}>
-              <Text style={styles.modalCloseText}>✕</Text>
-            </TouchableOpacity>
+            <View style={styles.modalHeaderButtons}>
+              {isViewingOwnPhoto && (
+                <TouchableOpacity 
+                  style={styles.modalDeleteButton} 
+                  onPress={handleDeletePhoto}
+                  disabled={deletingPhoto}
+                >
+                  {deletingPhoto ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.modalDeleteText}>🗑️</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.modalCloseButton} onPress={closeModal}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
             {viewingImage && (
               <>
                 <ScrollView
@@ -1076,11 +1141,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalCloseButton: {
+  modalHeaderButtons: {
     position: 'absolute',
     top: 50,
     right: 20,
     zIndex: 1000,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalCloseButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -1092,6 +1161,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  modalDeleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(220, 53, 69, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalDeleteText: {
+    fontSize: 20,
   },
   modalScrollView: {
     flex: 1,
