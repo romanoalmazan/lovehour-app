@@ -14,6 +14,8 @@ import {
   Modal,
   Pressable,
   TextInput,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,6 +34,12 @@ import {
   deleteUserPhoto,
   Photo 
 } from '../services/userService';
+import {
+  initializeNotifications,
+  updateNotificationSchedule,
+  checkAndNotifyPartnerUpdate,
+  resetNotifications
+} from '../services/notificationService';
 
 const { width } = Dimensions.get('window');
 // Calculate photo size for 3-column grid
@@ -313,6 +321,9 @@ const LoveHourScreen: React.FC = () => {
   const [canUpload, setCanUpload] = useState(true);
   const [timeUntilNextHour, setTimeUntilNextHour] = useState(0);
   const [uploadRestrictionReason, setUploadRestrictionReason] = useState<string | null>(null);
+  
+  // Partner data for notifications
+  const [partnerName, setPartnerName] = useState<string | undefined>(undefined);
 
   // Set up real-time photo subscriptions
   useEffect(() => {
@@ -335,16 +346,24 @@ const LoveHourScreen: React.FC = () => {
         // Subscribe to partner's photos if matched
         const verification = await verifyMutualMatch(user.uid);
         if (verification.isValid && verification.partnerData) {
+          // Store partner name for notifications
+          const partnerNameForNotifications = verification.partnerData.fullName || verification.partnerData.displayName;
+          setPartnerName(partnerNameForNotifications);
+          
           const userData = await getUserData(user.uid);
           if (userData?.matchedWith) {
             unsubscribePartnerPhotos = subscribeToUserPhotos(userData.matchedWith, (photos) => {
               setPartnerPhotos(photos);
+              // Check for new partner photos and send notification
+              checkAndNotifyPartnerUpdate(photos.length, partnerNameForNotifications);
             });
           } else {
             setPartnerPhotos([]);
+            setPartnerName(undefined);
           }
         } else {
           setPartnerPhotos([]);
+          setPartnerName(undefined);
         }
       } catch (error: any) {
         console.error('Error setting up photo subscriptions:', error);
@@ -401,7 +420,10 @@ const LoveHourScreen: React.FC = () => {
     const unsubscribe = subscribeToUserData(user.uid, (userData) => {
       if (userData) {
         // Update awake status (default to true if not set)
-        setIsAwake(userData.isAwake !== false);
+        const newIsAwake = userData.isAwake !== false;
+        setIsAwake(newIsAwake);
+        // Update notification schedule when awake status changes
+        updateNotificationSchedule(newIsAwake);
         // Check upload status when user data changes
         checkUploadStatus();
       } else {
@@ -411,6 +433,28 @@ const LoveHourScreen: React.FC = () => {
 
     return () => unsubscribe();
   }, [user, checkUploadStatus]);
+  
+  // Initialize notifications when component mounts
+  useEffect(() => {
+    if (!user) return;
+
+    const initNotifications = async () => {
+      try {
+        const userData = await getUserData(user.uid);
+        const initialIsAwake = userData?.isAwake !== false;
+        await initializeNotifications(initialIsAwake);
+      } catch (error) {
+        console.error('Error initializing notifications:', error);
+      }
+    };
+
+    initNotifications();
+
+    // Cleanup on unmount
+    return () => {
+      resetNotifications();
+    };
+  }, [user]);
 
   // Check upload status on mount and when user changes
   useEffect(() => {
@@ -733,14 +777,17 @@ const LoveHourScreen: React.FC = () => {
         transparent={true}
         animationType="slide"
         onRequestClose={() => {
+          Keyboard.dismiss();
           setUploadModalVisible(false);
           setSelectedImage(null);
           setCaption('');
           setUploadType('regular');
         }}
       >
-        <View style={styles.uploadModalContainer}>
-          <View style={styles.uploadModalContent}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.uploadModalContainer}>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <View style={styles.uploadModalContent}>
             <View style={styles.uploadModalHeader}>
               <Text style={styles.uploadModalTitle}>
                 {uploadType === 'goodnight' 
@@ -751,6 +798,7 @@ const LoveHourScreen: React.FC = () => {
               </Text>
               <TouchableOpacity
                 onPress={() => {
+                  Keyboard.dismiss();
                   setUploadModalVisible(false);
                   setSelectedImage(null);
                   setCaption('');
@@ -786,6 +834,7 @@ const LoveHourScreen: React.FC = () => {
                     numberOfLines={3}
                     maxLength={200}
                     editable={!uploading}
+                    blurOnSubmit={true}
                   />
                   <Text style={styles.captionHint}>{caption.length}/200</Text>
                 </View>
@@ -814,8 +863,10 @@ const LoveHourScreen: React.FC = () => {
                 </TouchableOpacity>
               </>
             )}
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Full-Screen Image Modal */}

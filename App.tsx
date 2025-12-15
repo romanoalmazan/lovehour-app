@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -76,6 +77,42 @@ const AppNavigator: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  const notificationListener = useRef<Notifications.Subscription>();
+  const responseListener = useRef<Notifications.Subscription>();
+
+  useEffect(() => {
+    // Set up notification received handler (when app is in foreground)
+    notificationListener.current = Notifications.addNotificationReceivedListener((notification: Notifications.Notification) => {
+      console.log('Notification received:', notification);
+      // You can handle foreground notifications here if needed
+    });
+
+    // Set up notification response handler (when user taps notification)
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
+      console.log('Notification tapped:', response);
+      const data = response.notification.request.content.data;
+      
+      // Handle different notification types
+      if (data?.type === 'hourly') {
+        // User tapped hourly notification - app will navigate to LoveHour screen automatically
+        // since they're already matched
+      } else if (data?.type === 'partner_update') {
+        // User tapped partner update notification - app will navigate to LoveHour screen
+        // and they can view partner photos
+      }
+    });
+
+    return () => {
+      // Clean up listeners
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <StatusBar style="auto" />

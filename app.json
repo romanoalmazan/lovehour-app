@@ -17,15 +17,38 @@
     ],
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0",
+            "gradleVersion": "8.3",
+            "minSdkVersion": 23
+          },
+          "ios": {
+            "deploymentTarget": "13.4"
+          }
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "This app needs access to your photo library to select photos for LoveHour."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./components/images/lovehour-logo.png",
+          "color": "#D4A574",
+          "sounds": []
         }
       ]
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lovehour.app",
+      "bundleIdentifier": "com.romanoalmazan.lovehour",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to your camera to take photos for LoveHour.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select photos for LoveHour.",
@@ -41,7 +64,8 @@
               "NSIncludesSubdomains": true
             }
           }
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -49,18 +73,25 @@
         "foregroundImage": "./components/images/lovehour-logo.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.lovehour.app",
+      "package": "com.romanoalmazan.lovehour",
       "permissions": [
-        "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "usesCleartextTraffic": false
     },
     "web": {
       "favicon": "./components/images/lovehour-logo.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2e9bb7e4-8905-4a69-b4de-2eae549fdfbe"
+      }
     }
   }
 }
