@@ -289,7 +289,6 @@ const PhotoGallery = memo(({
 
 const LoveHourScreen: React.FC = () => {
   const { user, signOut } = useAuth();
-  const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -302,6 +301,10 @@ const LoveHourScreen: React.FC = () => {
   const [partnerPhotos, setPartnerPhotos] = useState<Photo[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Gallery modal state
+  const [galleryModalVisible, setGalleryModalVisible] = useState(false);
+  const [galleryActiveTab, setGalleryActiveTab] = useState<TabType>('your');
   
   // Track broken images (images that fail to load) - use array for stable reference
   const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
@@ -607,9 +610,6 @@ const LoveHourScreen: React.FC = () => {
     }
   };
 
-
-  const currentPhotos = activeTab === 'your' ? userPhotos : partnerPhotos;
-
   // Check if viewing image belongs to current user
   const isViewingOwnPhoto = useMemo(() => {
     if (!viewingImage || !viewingImage.id) return false;
@@ -685,7 +685,6 @@ const LoveHourScreen: React.FC = () => {
       >
         <View style={styles.header}>
           <Text style={styles.title}>LoveHour</Text>
-          <Text style={styles.subtitle}>Welcome, {displayName}</Text>
           
           {/* Status Indicator and Countdown Timer */}
           <View style={styles.statusContainer}>
@@ -705,6 +704,28 @@ const LoveHourScreen: React.FC = () => {
             )}
           </View>
 
+          {/* Upload Restriction Message */}
+          {!canUpload && uploadRestrictionReason && (
+            <View style={styles.restrictionContainer}>
+              <Text style={styles.restrictionText}>{uploadRestrictionReason}</Text>
+            </View>
+          )}
+
+          {/* Send Update Button - Only show when awake */}
+          {isAwake === true && (
+            <TouchableOpacity
+              style={[styles.sendUpdateButtonLarge, !canUpload && styles.sendUpdateButtonDisabled]}
+              onPress={() => pickImage('regular')}
+              activeOpacity={0.8}
+              disabled={!canUpload}
+            >
+              <View style={styles.sendUpdateButtonContent}>
+                <Text style={styles.sendUpdateButtonIcon}>+</Text>
+                <Text style={styles.sendUpdateButtonText}>Send Update</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
           {/* Goodnight/Goodmorning Buttons */}
           {isAwake === true && (
             <TouchableOpacity
@@ -722,48 +743,72 @@ const LoveHourScreen: React.FC = () => {
               <Text style={styles.goodmorningButtonText}>🌅 Send Good Morning</Text>
             </TouchableOpacity>
           )}
+        </View>
 
-          {/* Upload Restriction Message */}
-          {!canUpload && uploadRestrictionReason && (
-            <View style={styles.restrictionContainer}>
-              <Text style={styles.restrictionText}>{uploadRestrictionReason}</Text>
+        {/* Featured Partner Update Section */}
+        <View style={styles.featuredUpdateSection}>
+          <Text style={styles.featuredUpdateTitle}>
+            Latest Update from {partnerName || 'Partner'}
+          </Text>
+          {loadingPhotos ? (
+            <View style={styles.featuredUpdateCard}>
+              <View style={styles.featuredUpdateImageFrame}>
+                <ActivityIndicator size="large" color="#D4A574" />
+              </View>
+            </View>
+          ) : partnerPhotos.length > 0 ? (
+            <TouchableOpacity
+              style={styles.featuredUpdateCard}
+              onPress={() => {
+                if (partnerPhotos[0]) {
+                  setViewingImage(partnerPhotos[0]);
+                  setModalVisible(true);
+                }
+              }}
+              activeOpacity={0.9}
+            >
+              <View style={styles.featuredUpdateImageFrame}>
+                <Image 
+                  source={{ uri: partnerPhotos[0].url }} 
+                  style={styles.featuredUpdateImage}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={styles.featuredUpdateCaptionFrame}>
+                <Text style={styles.featuredUpdateCaption}>{partnerPhotos[0].caption}</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.featuredUpdateCard}>
+              <View style={styles.featuredUpdateImageFrame}>
+                <View style={styles.emptyFeaturedContainer}>
+                  <Text style={styles.emptyFeaturedText}>No updates from partner yet</Text>
+                </View>
+              </View>
             </View>
           )}
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabContainer}>
+        {/* View All Buttons */}
+        <View style={styles.viewAllButtonsContainer}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'your' && styles.activeTab]}
-            onPress={() => setActiveTab('your')}
+            style={styles.viewAllButton}
+            onPress={() => {
+              setGalleryActiveTab('partner');
+              setGalleryModalVisible(true);
+            }}
           >
-            <Text style={[styles.tabText, activeTab === 'your' && styles.activeTabText]}>
-              Your Photos
-            </Text>
+            <Text style={styles.viewAllButtonText}>View All Partner's Updates</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'partner' && styles.activeTab]}
-            onPress={() => setActiveTab('partner')}
+            style={styles.viewAllButton}
+            onPress={() => {
+              setGalleryActiveTab('your');
+              setGalleryModalVisible(true);
+            }}
           >
-            <Text style={[styles.tabText, activeTab === 'partner' && styles.activeTabText]}>
-              Partner Photos
-            </Text>
+            <Text style={styles.viewAllButtonText}>View All My Updates</Text>
           </TouchableOpacity>
-        </View>
-
-        {/* Photo Gallery */}
-        <View style={styles.gallerySection}>
-          <PhotoGallery 
-            photos={currentPhotos} 
-            showUploadButton={activeTab === 'your'}
-            brokenImageIdsArray={brokenImageIdsArray}
-            activeTab={activeTab}
-            canUpload={canUpload}
-            onPickImage={pickImage}
-            onImagePress={handleImagePress}
-            onImageError={handleImageError}
-            loadingPhotos={loadingPhotos}
-          />
         </View>
 
         <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
@@ -921,6 +966,67 @@ const LoveHourScreen: React.FC = () => {
             )}
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Gallery Modal */}
+      <Modal
+        visible={galleryModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setGalleryModalVisible(false)}
+      >
+        <View style={styles.galleryModalContainer}>
+          <View style={styles.galleryModalContent}>
+            <View style={styles.galleryModalHeader}>
+              <Text style={styles.galleryModalTitle}>Photo Gallery</Text>
+              <TouchableOpacity
+                onPress={() => setGalleryModalVisible(false)}
+              >
+                <Text style={styles.galleryModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              style={styles.galleryModalScrollView}
+              contentContainerStyle={styles.galleryModalScrollContent}
+            >
+              {/* Tabs */}
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tab, galleryActiveTab === 'your' && styles.activeTab]}
+                  onPress={() => setGalleryActiveTab('your')}
+                >
+                  <Text style={[styles.tabText, galleryActiveTab === 'your' && styles.activeTabText]}>
+                    Your Photos
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, galleryActiveTab === 'partner' && styles.activeTab]}
+                  onPress={() => setGalleryActiveTab('partner')}
+                >
+                  <Text style={[styles.tabText, galleryActiveTab === 'partner' && styles.activeTabText]}>
+                    Partner Photos
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Photo Gallery */}
+              <View style={styles.gallerySection}>
+                <PhotoGallery 
+                  photos={galleryActiveTab === 'your' ? userPhotos : partnerPhotos} 
+                  showUploadButton={false}
+                  brokenImageIdsArray={brokenImageIdsArray}
+                  activeTab={galleryActiveTab}
+                  canUpload={canUpload}
+                  onPickImage={pickImage}
+                  onImagePress={handleImagePress}
+                  onImageError={handleImageError}
+                  loadingPhotos={loadingPhotos}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1403,6 +1509,186 @@ const styles = StyleSheet.create({
   },
   uploadButtonItemDisabled: {
     opacity: 0.5,
+  },
+  sendUpdateButtonLarge: {
+    width: '100%',
+    minHeight: 120,
+    marginTop: 15,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 3,
+    borderColor: '#D4A574',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sendUpdateButtonContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendUpdateButtonIcon: {
+    fontSize: 48,
+    color: '#D4A574',
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  sendUpdateButtonText: {
+    fontSize: 18,
+    color: '#8B6F47',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  sendUpdateButtonDisabled: {
+    opacity: 0.5,
+  },
+  featuredUpdateSection: {
+    marginTop: 30,
+    marginBottom: 20,
+    paddingHorizontal: 24,
+  },
+  featuredUpdateTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#8B6F47',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  featuredUpdateCard: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  featuredUpdateImageFrame: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    borderWidth: 3,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+    marginBottom: 12,
+  },
+  featuredUpdateImage: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredUpdateCaptionFrame: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    padding: 16,
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  featuredUpdateCaption: {
+    fontSize: 16,
+    color: '#6B5B4A',
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  viewAllButtonsContainer: {
+    paddingHorizontal: 24,
+    marginBottom: 30,
+    gap: 12,
+  },
+  viewAllButton: {
+    width: '100%',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
+    alignItems: 'center',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  viewAllButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '700',
+  },
+  galleryModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  galleryModalContent: {
+    backgroundColor: '#ffe6d5',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    flex: 1,
+  },
+  galleryModalScrollView: {
+    flex: 1,
+  },
+  galleryModalScrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+  },
+  galleryModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: '#D4A574',
+  },
+  galleryModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#8B6F47',
+    letterSpacing: 0.5,
+  },
+  galleryModalClose: {
+    fontSize: 28,
+    color: '#8B6F47',
+    fontWeight: 'bold',
+  },
+  emptyFeaturedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyFeaturedText: {
+    fontSize: 16,
+    color: '#8B6F47',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 
