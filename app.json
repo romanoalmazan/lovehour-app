@@ -20,14 +20,14 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 34,
-            "targetSdkVersion": 34,
-            "buildToolsVersion": "34.0.0",
-            "gradleVersion": "8.3",
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0",
+            "gradleVersion": "8.10",
             "minSdkVersion": 23
           },
           "ios": {
-            "deploymentTarget": "13.4"
+            "deploymentTarget": "15.1"
           }
         }
       ],
@@ -82,8 +82,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS"
-      ],
-      "usesCleartextTraffic": false
+      ]
     },
     "web": {
       "favicon": "./components/images/lovehour-logo.png"

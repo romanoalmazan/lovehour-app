@@ -92,8 +92,8 @@ export const scheduleHourlyNotifications = async (isAwake: boolean): Promise<voi
           data: { type: 'hourly' },
         },
         trigger: {
+          type: 'date',
           date: notificationTime,
-          repeats: false,
         },
       });
 
@@ -145,7 +145,8 @@ export const sendPartnerUpdateNotification = async (partnerName?: string): Promi
         sound: true,
         data: { type: 'partner_update' },
       },
-      trigger: null, // Send immediately
+      // Omit trigger for immediate notification, or use null
+      trigger: null,
     });
 
     console.log('Sent partner update notification');
