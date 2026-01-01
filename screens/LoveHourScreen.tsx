@@ -547,7 +547,7 @@ const LoveHourScreen: React.FC = () => {
     }
 
     setUploading(true);
-    setUploadStatus('Uploading...');
+    setUploadStatus('');
 
     try {
       let result;
@@ -569,44 +569,26 @@ const LoveHourScreen: React.FC = () => {
       }
 
       if (result.success) {
-        setUploadStatus('Upload successful!');
-        
         // Refresh upload status
         await checkUploadStatus();
         
-        const successMessage = uploadType === 'goodnight' 
-          ? 'Goodnight update sent! Sleep well!'
-          : uploadType === 'goodmorning'
-          ? 'Good morning update sent! Have a great day!'
-          : 'Image uploaded successfully!';
-        
-        Alert.alert(
-          'Success',
-          successMessage,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setSelectedImage(null);
-                setCaption('');
-                setUploadStatus('');
-                setUploadModalVisible(false);
-                setUploadType('regular');
-              },
-            },
-          ]
-        );
+        // Close modal without showing success popup
+        setSelectedImage(null);
+        setCaption('');
+        setUploadStatus('');
+        setUploadModalVisible(false);
+        setUploadType('regular');
       } else {
-        setUploadStatus('Upload failed');
+        setUploadStatus('');
         Alert.alert(
-          'Upload Error',
-          result.error || 'Failed to upload image. Please try again.'
+          'Error',
+          result.error || 'Failed to send update. Please try again.'
         );
       }
     } catch (error: any) {
-      console.error('Error uploading image:', error);
-      setUploadStatus('Upload failed');
-      Alert.alert('Error', error.message || 'Failed to upload image');
+      console.error('Error sending update:', error);
+      setUploadStatus('');
+      Alert.alert('Error', error.message || 'Failed to send update');
     } finally {
       setUploading(false);
     }
@@ -912,7 +894,7 @@ const LoveHourScreen: React.FC = () => {
                         {uploading ? (
                           <View style={styles.uploadingContainer}>
                             <ActivityIndicator color="#fff" style={styles.spinner} />
-                            <Text style={styles.buttonText}>Uploading...</Text>
+                            <Text style={styles.buttonText}>Sending...</Text>
                           </View>
                         ) : (
                           <Text style={styles.buttonText}>Send Update</Text>
