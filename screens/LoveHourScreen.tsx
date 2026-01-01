@@ -16,6 +16,8 @@ import {
   TextInput,
   Keyboard,
   TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
@@ -829,89 +831,100 @@ const LoveHourScreen: React.FC = () => {
           setUploadType('regular');
         }}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.uploadModalContainer}>
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-              <View style={styles.uploadModalContent}>
-            <View style={styles.uploadModalHeader}>
-              <Text style={styles.uploadModalTitle}>
-                {uploadType === 'goodnight' 
-                  ? 'Send Goodnight' 
-                  : uploadType === 'goodmorning'
-                  ? 'Send Good Morning'
-                  : 'Send Update'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setUploadModalVisible(false);
-                  setSelectedImage(null);
-                  setCaption('');
-                  setUploadType('regular');
-                }}
-              >
-                <Text style={styles.uploadModalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {selectedImage && (
-              <>
-                <View style={styles.uploadImagePreviewContainer}>
-                  <Image source={{ uri: selectedImage }} style={styles.uploadImagePreview} />
-                  <TouchableOpacity
-                    style={styles.changeImageButton}
-                    onPress={() => pickImage(uploadType)}
-                    disabled={uploading}
-                  >
-                    <Text style={styles.changeImageText}>Change Image</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.captionContainer}>
-                  <Text style={styles.captionLabel}>Caption *</Text>
-                  <TextInput
-                    style={styles.captionInput}
-                    value={caption}
-                    onChangeText={setCaption}
-                    placeholder="Enter a caption for your image"
-                    placeholderTextColor="#999"
-                    multiline
-                    numberOfLines={3}
-                    maxLength={200}
-                    editable={!uploading}
-                    blurOnSubmit={true}
-                  />
-                  <Text style={styles.captionHint}>{caption.length}/200</Text>
-                </View>
-
-                {uploadStatus && (
-                  <Text style={styles.uploadStatusText}>{uploadStatus}</Text>
-                )}
-
-                <TouchableOpacity
-                  style={[
-                    styles.button,
-                    styles.uploadButton,
-                    (uploading || !caption.trim()) && styles.buttonDisabled,
-                  ]}
-                  onPress={uploadImage}
-                  disabled={uploading || !caption.trim()}
+        <KeyboardAvoidingView
+          style={styles.uploadModalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.uploadModalOverlay}>
+              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+                <ScrollView
+                  style={styles.uploadModalScrollView}
+                  contentContainerStyle={styles.uploadModalContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
                 >
-                  {uploading ? (
-                    <View style={styles.uploadingContainer}>
-                      <ActivityIndicator color="#fff" style={styles.spinner} />
-                      <Text style={styles.buttonText}>Uploading...</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.buttonText}>Send Update</Text>
+                  <View style={styles.uploadModalHeader}>
+                    <Text style={styles.uploadModalTitle}>
+                      {uploadType === 'goodnight' 
+                        ? 'Send Goodnight' 
+                        : uploadType === 'goodmorning'
+                        ? 'Send Good Morning'
+                        : 'Send Update'}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setUploadModalVisible(false);
+                        setSelectedImage(null);
+                        setCaption('');
+                        setUploadType('regular');
+                      }}
+                    >
+                      <Text style={styles.uploadModalClose}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {selectedImage && (
+                    <>
+                      <View style={styles.uploadImagePreviewContainer}>
+                        <Image source={{ uri: selectedImage }} style={styles.uploadImagePreview} />
+                        <TouchableOpacity
+                          style={styles.changeImageButton}
+                          onPress={() => pickImage(uploadType)}
+                          disabled={uploading}
+                        >
+                          <Text style={styles.changeImageText}>Change Image</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.captionContainer}>
+                        <Text style={styles.captionLabel}>Caption *</Text>
+                        <TextInput
+                          style={styles.captionInput}
+                          value={caption}
+                          onChangeText={setCaption}
+                          placeholder="Enter a caption for your image"
+                          placeholderTextColor="#999"
+                          multiline
+                          numberOfLines={3}
+                          maxLength={200}
+                          editable={!uploading}
+                          blurOnSubmit={true}
+                        />
+                        <Text style={styles.captionHint}>{caption.length}/200</Text>
+                      </View>
+
+                      {uploadStatus && (
+                        <Text style={styles.uploadStatusText}>{uploadStatus}</Text>
+                      )}
+
+                      <TouchableOpacity
+                        style={[
+                          styles.button,
+                          styles.uploadButton,
+                          (uploading || !caption.trim()) && styles.buttonDisabled,
+                        ]}
+                        onPress={uploadImage}
+                        disabled={uploading || !caption.trim()}
+                      >
+                        {uploading ? (
+                          <View style={styles.uploadingContainer}>
+                            <ActivityIndicator color="#fff" style={styles.spinner} />
+                            <Text style={styles.buttonText}>Uploading...</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.buttonText}>Send Update</Text>
+                        )}
+                      </TouchableOpacity>
+                    </>
                   )}
-                </TouchableOpacity>
-              </>
-            )}
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
+                </ScrollView>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Full-Screen Image Modal */}
@@ -1362,8 +1375,14 @@ const styles = StyleSheet.create({
   },
   uploadModalContainer: {
     flex: 1,
+  },
+  uploadModalOverlay: {
+    flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+  },
+  uploadModalScrollView: {
+    maxHeight: '90%',
   },
   uploadModalContent: {
     backgroundColor: '#ffe6d5',
@@ -1371,7 +1390,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 24,
     paddingBottom: 40,
-    maxHeight: '90%',
   },
   uploadModalHeader: {
     flexDirection: 'row',
