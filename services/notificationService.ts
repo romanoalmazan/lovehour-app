@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { getCurrentHourWindow, getTimeUntilNextHour } from './userService';
+import { getCurrentHourWindow, getTimeUntilNextHour, getUserData } from './userService';
 
 // Configure notification handler behavior
 Notifications.setNotificationHandler({
@@ -55,11 +55,12 @@ export const requestPermissions = async (): Promise<boolean> => {
 };
 
 /**
- * Schedule hourly notifications for the next 24 hours
+ * Schedule notifications based on user's upload interval
  * Only schedules when user is awake
+ * @param userId - The user ID
  * @param isAwake - Whether the user is currently awake
  */
-export const scheduleHourlyNotifications = async (isAwake: boolean): Promise<void> => {
+export const scheduleHourlyNotifications = async (userId: string, isAwake: boolean): Promise<void> => {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:61',message:'scheduleHourlyNotifications called',data:{isAwake,scheduledCountBefore:scheduledNotificationIds.length,isScheduling},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
   // #endregion
@@ -89,20 +90,37 @@ export const scheduleHourlyNotifications = async (isAwake: boolean): Promise<voi
       return;
     }
 
+    // Get user's upload interval setting (default to 1 hour)
+    let intervalHours = 1;
+    try {
+      const userData = await getUserData(userId);
+      intervalHours = userData?.uploadIntervalHours || 1;
+    } catch (error) {
+      console.error('Error getting user data for notification scheduling:', error);
+    }
+
     const now = new Date();
     const newNotificationIds: string[] = [];
 
-    // Schedule notifications for the next 24 hours
-    // Start from the next hour (i=1 means 1 hour from now)
-    for (let i = 1; i <= 24; i++) {
+    // Schedule notifications for the next 24 hours based on interval
+    // Calculate how many intervals fit in 24 hours
+    const intervalsIn24Hours = Math.ceil(24 / intervalHours);
+    
+    for (let i = 1; i <= intervalsIn24Hours; i++) {
       const notificationTime = new Date(now);
-      // Add i hours to current time, then set to the start of that hour
-      notificationTime.setHours(notificationTime.getHours() + i, 0, 0, 0);
+      // Add i * intervalHours to current time
+      notificationTime.setHours(notificationTime.getHours() + (i * intervalHours), 0, 0, 0);
 
+      // Don't schedule beyond 24 hours from now
+      if (notificationTime.getTime() - now.getTime() > 24 * 60 * 60 * 1000) {
+        break;
+      }
+
+      const intervalText = intervalHours === 1 ? 'hour' : `${intervalHours} hours`;
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
-          title: 'New Hour Started! 🌅',
-          body: 'You can now upload a new update to your partner',
+          title: 'Time for an Update! 🌅',
+          body: `You can now upload a new update to your partner (every ${intervalText})`,
           sound: true,
           data: { type: 'hourly' },
         },
@@ -201,13 +219,14 @@ export const sendPartnerUpdateNotification = async (partnerName?: string): Promi
 
 /**
  * Update notification schedule based on user awake status
+ * @param userId - The user ID
  * @param isAwake - Whether the user is currently awake
  */
-export const updateNotificationSchedule = async (isAwake: boolean): Promise<void> => {
+export const updateNotificationSchedule = async (userId: string, isAwake: boolean): Promise<void> => {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:162',message:'updateNotificationSchedule called',data:{isAwake},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
   // #endregion
-  await scheduleHourlyNotifications(isAwake);
+  await scheduleHourlyNotifications(userId, isAwake);
 };
 
 /**
@@ -242,14 +261,15 @@ export const checkAndNotifyPartnerUpdate = async (
 /**
  * Initialize notification service
  * Should be called when app starts or user logs in
+ * @param userId - The user ID
  * @param isAwake - Initial awake status
  */
-export const initializeNotifications = async (isAwake: boolean): Promise<void> => {
+export const initializeNotifications = async (userId: string, isAwake: boolean): Promise<void> => {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:189',message:'initializeNotifications called',data:{isAwake},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
   // #endregion
   await requestPermissions();
-  await scheduleHourlyNotifications(isAwake);
+  await scheduleHourlyNotifications(userId, isAwake);
   isInitialized = false; // Reset for new session
   lastPartnerPhotoCount = 0;
 };

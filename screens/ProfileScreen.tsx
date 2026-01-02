@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
-import { getUserData, verifyMutualMatch, UserData } from '../services/userService';
+import { getUserData, verifyMutualMatch, UserData, updateUploadInterval } from '../services/userService';
 import { RootStackParamList } from '../types/navigation';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
@@ -21,6 +22,8 @@ const ProfileScreen: React.FC = () => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [partnerData, setPartnerData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedInterval, setSelectedInterval] = useState<number>(1);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -35,6 +38,8 @@ const ProfileScreen: React.FC = () => {
         // Get user data
         const currentUserData = await getUserData(user.uid);
         setUserData(currentUserData);
+        // Set selected interval (default to 1 hour if not set)
+        setSelectedInterval(currentUserData?.uploadIntervalHours || 1);
 
         // Get partner data if matched
         if (currentUserData?.matchedWith) {
@@ -59,6 +64,25 @@ const ProfileScreen: React.FC = () => {
 
   const userName = userData?.fullName || userData?.displayName || user?.displayName || user?.email?.split('@')[0] || 'User';
   const partnerName = partnerData?.fullName || partnerData?.displayName || partnerData?.email?.split('@')[0] || null;
+  const intervalOptions = [1, 3, 5, 7, 9, 11];
+
+  const handleIntervalChange = async (interval: number) => {
+    if (!user || saving || interval === selectedInterval) return;
+    
+    setSaving(true);
+    try {
+      await updateUploadInterval(user.uid, interval);
+      setSelectedInterval(interval);
+      // Reload user data to get updated value
+      const updatedUserData = await getUserData(user.uid);
+      setUserData(updatedUserData);
+    } catch (error) {
+      console.error('Error updating upload interval:', error);
+      Alert.alert('Error', 'Failed to update upload interval. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -107,6 +131,43 @@ const ProfileScreen: React.FC = () => {
               <Text style={styles.noMatchText}>Not matched</Text>
             )}
           </View>
+        </View>
+
+        <View style={styles.profileSection}>
+          <Text style={styles.sectionLabel}>Update Interval</Text>
+          <Text style={styles.sectionDescription}>
+            How often you can send an update
+          </Text>
+          <View style={styles.intervalSelector}>
+            {intervalOptions.map((interval) => (
+              <TouchableOpacity
+                key={interval}
+                style={[
+                  styles.intervalOption,
+                  selectedInterval === interval && styles.intervalOptionSelected,
+                  saving && styles.intervalOptionDisabled,
+                ]}
+                onPress={() => handleIntervalChange(interval)}
+                disabled={saving}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.intervalOptionText,
+                    selectedInterval === interval && styles.intervalOptionTextSelected,
+                  ]}
+                >
+                  {interval}h
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {saving && (
+            <View style={styles.savingIndicator}>
+              <ActivityIndicator size="small" color="#D4A574" />
+              <Text style={styles.savingText}>Saving...</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -194,6 +255,67 @@ const styles = StyleSheet.create({
   noMatchText: {
     fontSize: 18,
     color: '#999',
+    fontStyle: 'italic',
+  },
+  sectionDescription: {
+    fontSize: 14,
+    color: '#6B5B4A',
+    marginBottom: 16,
+    marginLeft: 4,
+  },
+  intervalSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  intervalOption: {
+    flex: 1,
+    minWidth: '30%',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  intervalOptionSelected: {
+    backgroundColor: '#D4A574',
+    borderColor: '#8B6F47',
+    shadowOpacity: 0.2,
+    elevation: 3,
+  },
+  intervalOptionDisabled: {
+    opacity: 0.6,
+  },
+  intervalOptionText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#8B6F47',
+  },
+  intervalOptionTextSelected: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  savingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  savingText: {
+    fontSize: 14,
+    color: '#6B5B4A',
     fontStyle: 'italic',
   },
 });

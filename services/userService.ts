@@ -38,7 +38,9 @@ export interface UserData {
   gender?: 'male' | 'female' | 'other';
   photos?: string[];
   isAwake?: boolean;
-  lastUploadHour?: number | null;
+  lastUploadHour?: number | null; // Deprecated: kept for backward compatibility, use lastUploadTimestamp instead
+  lastUploadTimestamp?: any | null; // Firestore timestamp of last upload
+  uploadIntervalHours?: number; // Upload interval in hours (1, 3, 5, 7, 9, or 11)
   lastGoodnightTime?: any | null;
   lastGoodmorningTime?: any | null;
 }
@@ -692,7 +694,51 @@ export const getCurrentHourWindow = (): number => {
 };
 
 /**
- * Get milliseconds until next hour window starts
+ * Get milliseconds until next upload window
+ * @param userId - The user ID (optional, for getting user's interval setting)
+ * @returns Promise with milliseconds until next upload
+ */
+export const getTimeUntilNextUpload = async (userId?: string): Promise<number> => {
+  const now = new Date().getTime();
+  
+  // If userId provided, get user's interval setting
+  if (userId) {
+    try {
+      const userData = await getUserData(userId);
+      const intervalHours = userData?.uploadIntervalHours || 1;
+      const intervalMs = intervalHours * 60 * 60 * 1000;
+      
+      if (userData?.lastUploadTimestamp) {
+        const lastUploadTime = userData.lastUploadTimestamp.toDate ? userData.lastUploadTimestamp.toDate() : new Date(userData.lastUploadTimestamp);
+        const lastUploadTimeMs = lastUploadTime.getTime();
+        const timeSinceLastUpload = now - lastUploadTimeMs;
+        
+        // If enough time has already passed, user can upload now (return 0)
+        if (timeSinceLastUpload >= intervalMs) {
+          return 0;
+        }
+        
+        // Calculate time remaining until next upload window
+        const timeRemaining = intervalMs - timeSinceLastUpload;
+        return Math.max(0, timeRemaining);
+      }
+      
+      // If no last upload, can upload now
+      return 0;
+    } catch (error) {
+      console.error('Error getting time until next upload:', error);
+      // Fallback to 1 hour
+    }
+  }
+  
+  // Default: 1 hour from now
+  const nextHour = new Date(now);
+  nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
+  return nextHour.getTime() - now;
+};
+
+/**
+ * Get milliseconds until next hour window starts (deprecated - use getTimeUntilNextUpload)
  * @returns Milliseconds until next hour
  */
 export const getTimeUntilNextHour = (): number => {
@@ -703,7 +749,7 @@ export const getTimeUntilNextHour = (): number => {
 };
 
 /**
- * Check if user can upload in the current hour window
+ * Check if user can upload based on their interval setting
  * @param userId - The user ID
  * @returns Promise with canUpload status and reason if not allowed
  */
@@ -720,25 +766,60 @@ export const canUploadInCurrentHour = async (userId: string): Promise<{ canUploa
       return { canUpload: false, reason: 'You are currently asleep. Send a good morning update to start your day!' };
     }
 
-    // If user hasn't set awake status, default to awake (isAwake is true or undefined, both allow upload)
+    // Get user's upload interval (default to 1 hour for backward compatibility)
+    const intervalHours = userData.uploadIntervalHours || 1;
+    const now = new Date().getTime();
 
-    // Get current hour window
-    const currentHour = getCurrentHourWindow();
+    // Check if user has uploaded before
+    let lastUploadTime: Date | null = null;
+    
+    // Prefer timestamp-based approach
+    if (userData.lastUploadTimestamp) {
+      lastUploadTime = userData.lastUploadTimestamp.toDate ? userData.lastUploadTimestamp.toDate() : new Date(userData.lastUploadTimestamp);
+    } else if (userData.lastUploadHour !== null && userData.lastUploadHour !== undefined) {
+      // Fallback to hour-based approach for backward compatibility
+      const currentHour = new Date().getHours();
+      if (userData.lastUploadHour === currentHour) {
+        // Estimate: assume upload was at start of current hour
+        const today = new Date();
+        today.setHours(currentHour, 0, 0, 0);
+        lastUploadTime = today;
+      }
+    }
 
-    // If user hasn't uploaded yet, or lastUploadHour is null, they can upload
-    if (userData.lastUploadHour === null || userData.lastUploadHour === undefined) {
+    // If user hasn't uploaded yet, they can upload
+    if (!lastUploadTime) {
       return { canUpload: true };
     }
 
-    // Check if user already uploaded in current hour window
-    if (userData.lastUploadHour === currentHour) {
+    // Calculate time since last upload
+    const timeSinceLastUpload = now - lastUploadTime.getTime();
+    const intervalMs = intervalHours * 60 * 60 * 1000;
+
+    if (timeSinceLastUpload < intervalMs) {
+      // Not enough time has passed
+      const remainingMs = intervalMs - timeSinceLastUpload;
+      const remainingHours = Math.floor(remainingMs / (60 * 60 * 1000));
+      const remainingMinutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+      
+      let reasonText = `You've already uploaded a photo. Next upload available in `;
+      if (remainingHours > 0) {
+        reasonText += `${remainingHours} hour${remainingHours > 1 ? 's' : ''}`;
+        if (remainingMinutes > 0) {
+          reasonText += ` and ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}`;
+        }
+      } else {
+        reasonText += `${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}`;
+      }
+      reasonText += '.';
+      
       return { 
         canUpload: false, 
-        reason: `You've already uploaded a photo this hour. Next upload available at ${(currentHour + 1) % 24}:00` 
+        reason: reasonText
       };
     }
 
-    // User can upload (different hour window)
+    // Enough time has passed, user can upload
     return { canUpload: true };
   } catch (error: any) {
     console.error('Error checking upload status:', error);
@@ -747,19 +828,54 @@ export const canUploadInCurrentHour = async (userId: string): Promise<{ canUploa
 };
 
 /**
- * Update user's last upload hour after successful upload
+ * Update user's last upload timestamp after successful upload
  * @param userId - The user ID
- * @param hour - The hour window (0-23) of the upload
  */
-export const updateLastUploadHour = async (userId: string, hour: number): Promise<void> => {
+export const updateLastUploadTimestamp = async (userId: string): Promise<void> => {
   try {
     await ensureFirestoreReady();
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
-      lastUploadHour: hour
+      lastUploadTimestamp: serverTimestamp(),
+      // Keep lastUploadHour for backward compatibility (deprecated)
+      lastUploadHour: new Date().getHours()
     });
   } catch (error: any) {
-    console.error('Error updating last upload hour:', error);
+    console.error('Error updating last upload timestamp:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update user's last upload hour after successful upload (deprecated - use updateLastUploadTimestamp)
+ * @param userId - The user ID
+ * @param hour - The hour window (0-23) of the upload
+ */
+export const updateLastUploadHour = async (userId: string, hour: number): Promise<void> => {
+  // Call the new timestamp-based function for consistency
+  await updateLastUploadTimestamp(userId);
+};
+
+/**
+ * Update user's upload interval setting
+ * @param userId - The user ID
+ * @param intervalHours - The upload interval in hours (1, 3, 5, 7, 9, or 11)
+ */
+export const updateUploadInterval = async (userId: string, intervalHours: number): Promise<void> => {
+  try {
+    // Validate interval is one of the allowed values
+    const allowedIntervals = [1, 3, 5, 7, 9, 11];
+    if (!allowedIntervals.includes(intervalHours)) {
+      throw new Error(`Invalid interval. Must be one of: ${allowedIntervals.join(', ')}`);
+    }
+
+    await ensureFirestoreReady();
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      uploadIntervalHours: intervalHours
+    });
+  } catch (error: any) {
+    console.error('Error updating upload interval:', error);
     throw error;
   }
 };
@@ -828,12 +944,13 @@ export const sendGoodnightUpdate = async (
       createdAt: serverTimestamp()
     });
 
-    // 6. Update user document: set isAwake to false, update lastGoodnightTime, reset lastUploadHour
+    // 6. Update user document: set isAwake to false, update lastGoodnightTime, reset lastUploadTimestamp
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
       isAwake: false,
       lastGoodnightTime: serverTimestamp(),
-      lastUploadHour: null
+      lastUploadTimestamp: null,
+      lastUploadHour: null // Keep for backward compatibility
     });
 
     return { success: true };
@@ -910,13 +1027,13 @@ export const sendGoodmorningUpdate = async (
       createdAt: serverTimestamp()
     });
 
-    // 6. Update user document: set isAwake to true, update lastGoodmorningTime, set lastUploadHour to current hour
-    const currentHour = getCurrentHourWindow();
+    // 6. Update user document: set isAwake to true, update lastGoodmorningTime, reset lastUploadTimestamp
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
       isAwake: true,
       lastGoodmorningTime: serverTimestamp(),
-      lastUploadHour: currentHour
+      lastUploadTimestamp: null, // Reset on good morning so user can upload immediately
+      lastUploadHour: null // Keep for backward compatibility
     });
 
     return { success: true };

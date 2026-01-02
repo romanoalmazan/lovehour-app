@@ -32,10 +32,12 @@ import {
   subscribeToUserData,
   canUploadInCurrentHour,
   updateLastUploadHour,
+  updateLastUploadTimestamp,
   sendGoodnightUpdate,
   sendGoodmorningUpdate,
   getCurrentHourWindow,
   getTimeUntilNextHour,
+  getTimeUntilNextUpload,
   deleteUserPhoto,
   Photo 
 } from '../services/userService';
@@ -434,7 +436,7 @@ const LoveHourScreen: React.FC = () => {
         const newIsAwake = userData.isAwake !== false;
         setIsAwake(newIsAwake);
         // Update notification schedule when awake status changes
-        updateNotificationSchedule(newIsAwake);
+        updateNotificationSchedule(user.uid, newIsAwake);
         // Check upload status when user data changes
         checkUploadStatus();
       } else {
@@ -453,7 +455,7 @@ const LoveHourScreen: React.FC = () => {
       try {
         const userData = await getUserData(user.uid);
         const initialIsAwake = userData?.isAwake !== false;
-        await initializeNotifications(initialIsAwake);
+        await initializeNotifications(user.uid, initialIsAwake);
         // After initialization, updateNotificationSchedule will be called by the userData subscription
         // so we don't need to call it again here to avoid duplicate scheduling
       } catch (error) {
@@ -476,9 +478,18 @@ const LoveHourScreen: React.FC = () => {
 
   // Countdown timer that updates every second
   useEffect(() => {
-    const updateTimer = () => {
-      const timeMs = getTimeUntilNextHour();
-      setTimeUntilNextHour(Math.floor(timeMs / 1000)); // Convert to seconds
+    if (!user) return;
+
+    const updateTimer = async () => {
+      try {
+        const timeMs = await getTimeUntilNextUpload(user.uid);
+        setTimeUntilNextHour(Math.floor(timeMs / 1000)); // Convert to seconds
+      } catch (error) {
+        console.error('Error updating timer:', error);
+        // Fallback to old method
+        const timeMs = getTimeUntilNextHour();
+        setTimeUntilNextHour(Math.floor(timeMs / 1000));
+      }
     };
 
     // Update immediately
@@ -488,7 +499,7 @@ const LoveHourScreen: React.FC = () => {
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
 
   const pickImage = async (type: 'regular' | 'goodnight' | 'goodmorning' = 'regular') => {
@@ -569,10 +580,9 @@ const LoveHourScreen: React.FC = () => {
         // Regular upload
         result = await uploadUserImage(user.uid, selectedImage, caption);
         
-        // Update last upload hour after successful regular upload
+        // Update last upload timestamp after successful regular upload
         if (result.success) {
-          const currentHour = getCurrentHourWindow();
-          await updateLastUploadHour(user.uid, currentHour);
+          await updateLastUploadTimestamp(user.uid);
         }
       }
 
