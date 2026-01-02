@@ -316,6 +316,9 @@ const LoveHourScreen: React.FC = () => {
   const [galleryModalVisible, setGalleryModalVisible] = useState(false);
   const [galleryActiveTab, setGalleryActiveTab] = useState<TabType>('your');
   
+  // Track pending image to open after gallery closes
+  const [pendingImageToOpen, setPendingImageToOpen] = useState<Photo | null>(null);
+  
   // Track broken images (images that fail to load) - use array for stable reference
   const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
   const brokenImageIdsArray = useMemo(() => Array.from(brokenImageIds), [brokenImageIds]);
@@ -620,9 +623,24 @@ const LoveHourScreen: React.FC = () => {
 
   // Handle image click to open modal
   const handleImagePress = useCallback((photo: Photo) => {
-    setViewingImage(photo);
-    setModalVisible(true);
-  }, []);
+    // If gallery modal is open, close it first and queue the image to open
+    if (galleryModalVisible) {
+      setPendingImageToOpen(photo);
+      setGalleryModalVisible(false);
+    } else {
+      setViewingImage(photo);
+      setModalVisible(true);
+    }
+  }, [galleryModalVisible]);
+  
+  // Open image viewer when gallery closes if there's a pending image
+  useEffect(() => {
+    if (!galleryModalVisible && pendingImageToOpen) {
+      setViewingImage(pendingImageToOpen);
+      setModalVisible(true);
+      setPendingImageToOpen(null);
+    }
+  }, [galleryModalVisible, pendingImageToOpen]);
 
   // Handle photo deletion
   const handleDeletePhoto = useCallback(async () => {
@@ -1011,22 +1029,22 @@ const LoveHourScreen: React.FC = () => {
             >
               {/* Tabs */}
               <View style={styles.tabContainer}>
-                <TouchableOpacity
-                  style={[styles.tab, galleryActiveTab === 'your' && styles.activeTab]}
-                  onPress={() => setGalleryActiveTab('your')}
-                >
-                  <Text style={[styles.tabText, galleryActiveTab === 'your' && styles.activeTabText]}>
-                    Your Photos
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tab, galleryActiveTab === 'partner' && styles.activeTab]}
-                  onPress={() => setGalleryActiveTab('partner')}
-                >
-                  <Text style={[styles.tabText, galleryActiveTab === 'partner' && styles.activeTabText]}>
-                    Partner Photos
-                  </Text>
-                </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, galleryActiveTab === 'your' && styles.activeTab]}
+                onPress={() => setGalleryActiveTab('your')}
+              >
+                <Text style={[styles.tabText, galleryActiveTab === 'your' && styles.activeTabText]}>
+                  Your Photos
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, galleryActiveTab === 'partner' && styles.activeTab]}
+                onPress={() => setGalleryActiveTab('partner')}
+              >
+                <Text style={[styles.tabText, galleryActiveTab === 'partner' && styles.activeTabText]}>
+                  Partner Photos
+                </Text>
+              </TouchableOpacity>
               </View>
 
               {/* Photo Gallery */}
