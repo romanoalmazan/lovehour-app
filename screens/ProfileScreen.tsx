@@ -18,7 +18,7 @@ type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList,
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [partnerData, setPartnerData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,6 +162,7 @@ const ProfileScreen: React.FC = () => {
               </TouchableOpacity>
             ))}
           </View>
+          <View style={styles.intervalSelectorSpacer} />
           {saving && (
             <View style={styles.savingIndicator}>
               <ActivityIndicator size="small" color="#D4A574" />
@@ -169,6 +170,31 @@ const ProfileScreen: React.FC = () => {
             </View>
           )}
         </View>
+
+        {/* View All Buttons */}
+        <View style={styles.viewAllButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.viewAllButton, styles.viewAllButtonFirst]}
+            onPress={() => {
+              navigation.navigate('LoveHour', { openGallery: 'partner' });
+            }}
+          >
+            <Text style={styles.viewAllButtonText}>View All Partner's Updates</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.viewAllButton}
+            onPress={() => {
+              navigation.navigate('LoveHour', { openGallery: 'your' });
+            }}
+          >
+            <Text style={styles.viewAllButtonText}>View All My Updates</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Sign Out Button */}
+        <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -216,6 +242,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 24,
     paddingTop: 30,
+    paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -223,7 +250,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   profileSection: {
-    marginBottom: 30,
+    marginBottom: 50,
   },
   sectionLabel: {
     fontSize: 16,
@@ -267,6 +294,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    marginBottom: 0,
+  },
+  intervalSelectorSpacer: {
+    height: 20,
+    width: '100%',
   },
   intervalOption: {
     flex: 1,
@@ -317,6 +349,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B5B4A',
     fontStyle: 'italic',
+  },
+  viewAllButtonsContainer: {
+    marginTop: 40,
+    marginBottom: 30,
+  },
+  viewAllButton: {
+    width: '100%',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: '#D4A574',
+    borderWidth: 2,
+    borderColor: '#8B6F47',
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  viewAllButtonFirst: {
+    marginTop: 0,
+  },
+  viewAllButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '700',
+  },
+  signOutButton: {
+    alignSelf: 'center',
+    width: '100%',
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    marginTop: 20,
+    marginBottom: 0,
+    alignItems: 'center',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  signOutText: {
+    color: '#8B6F47',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

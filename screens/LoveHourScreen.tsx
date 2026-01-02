@@ -19,7 +19,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
@@ -295,10 +295,12 @@ const PhotoGallery = memo(({
 });
 
 type LoveHourScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'LoveHour'>;
+type LoveHourScreenRouteProp = RouteProp<RootStackParamList, 'LoveHour'>;
 
 const LoveHourScreen: React.FC = () => {
   const navigation = useNavigation<LoveHourScreenNavigationProp>();
-  const { user, signOut } = useAuth();
+  const route = useRoute<LoveHourScreenRouteProp>();
+  const { user } = useAuth();
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -340,6 +342,15 @@ const LoveHourScreen: React.FC = () => {
   
   // Partner data for notifications
   const [partnerName, setPartnerName] = useState<string | undefined>(undefined);
+
+  // Handle navigation parameters to open gallery modal
+  useEffect(() => {
+    const openGallery = route.params?.openGallery;
+    if (openGallery && (openGallery === 'your' || openGallery === 'partner')) {
+      setGalleryActiveTab(openGallery);
+      setGalleryModalVisible(true);
+    }
+  }, [route.params]);
 
   // Set up real-time photo subscriptions
   useEffect(() => {
@@ -814,32 +825,6 @@ const LoveHourScreen: React.FC = () => {
             </View>
           )}
         </View>
-
-        {/* View All Buttons */}
-        <View style={styles.viewAllButtonsContainer}>
-          <TouchableOpacity
-            style={styles.viewAllButton}
-            onPress={() => {
-              setGalleryActiveTab('partner');
-              setGalleryModalVisible(true);
-            }}
-          >
-            <Text style={styles.viewAllButtonText}>View All Partner's Updates</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.viewAllButton}
-            onPress={() => {
-              setGalleryActiveTab('your');
-              setGalleryModalVisible(true);
-            }}
-          >
-            <Text style={styles.viewAllButtonText}>View All My Updates</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* Upload Modal */}
@@ -1329,29 +1314,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 4,
   },
-  signOutButton: {
-    alignSelf: 'center',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#D4A574',
-    marginTop: 20,
-    shadowColor: '#8B6F47',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  signOutText: {
-    color: '#8B6F47',
-    fontSize: 16,
-    fontWeight: '700',
-  },
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
@@ -1666,34 +1628,6 @@ const styles = StyleSheet.create({
     color: '#6B5B4A',
     lineHeight: 22,
     textAlign: 'center',
-  },
-  viewAllButtonsContainer: {
-    paddingHorizontal: 24,
-    marginBottom: 30,
-    gap: 12,
-  },
-  viewAllButton: {
-    width: '100%',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    backgroundColor: '#D4A574',
-    borderWidth: 2,
-    borderColor: '#8B6F47',
-    alignItems: 'center',
-    shadowColor: '#8B6F47',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  viewAllButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '700',
   },
   galleryModalContainer: {
     flex: 1,
