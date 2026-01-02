@@ -719,13 +719,6 @@ const LoveHourScreen: React.FC = () => {
             )}
           </View>
 
-          {/* Upload Restriction Message */}
-          {!canUpload && uploadRestrictionReason && (
-            <View style={styles.restrictionContainer}>
-              <Text style={styles.restrictionText}>{uploadRestrictionReason}</Text>
-            </View>
-          )}
-
           {/* Send Update Button - Only show when awake */}
           {isAwake === true && (
             <TouchableOpacity
@@ -1552,20 +1545,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-  },
-  restrictionContainer: {
-    marginTop: 10,
-    padding: 12,
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ffc107',
-  },
-  restrictionText: {
-    fontSize: 13,
-    color: '#856404',
-    textAlign: 'center',
-    fontWeight: '600',
   },
   uploadButtonItemDisabled: {
     opacity: 0.5,
