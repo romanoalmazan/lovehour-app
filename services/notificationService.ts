@@ -158,6 +158,78 @@ export const scheduleHourlyNotifications = async (userId: string, isAwake: boole
 };
 
 /**
+ * Schedule a notification for when the user can upload again based on their last upload timestamp and interval
+ * @param userId - The user ID
+ */
+export const scheduleNextUploadNotification = async (userId: string): Promise<void> => {
+  try {
+    // Cancel existing notifications first
+    await cancelHourlyNotifications();
+
+    // Check if notifications are enabled
+    const userData = await getUserData(userId);
+    if (userData?.notificationsEnabled === false) {
+      console.log('Notifications are disabled, not scheduling');
+      return;
+    }
+
+    // Check if user is awake
+    if (userData?.isAwake === false) {
+      console.log('User is asleep, not scheduling notification');
+      return;
+    }
+
+    // Check if user has uploaded before
+    if (!userData?.lastUploadTimestamp) {
+      console.log('User has not uploaded yet, not scheduling notification');
+      return;
+    }
+
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      console.warn('Cannot schedule notification without permission');
+      return;
+    }
+
+    // Get upload interval (default to 1 hour)
+    const intervalHours = userData?.uploadIntervalHours || 1;
+
+    // Calculate next notification time
+    const lastUploadTime = userData.lastUploadTimestamp.toDate 
+      ? userData.lastUploadTimestamp.toDate() 
+      : new Date(userData.lastUploadTimestamp);
+    
+    const nextNotificationTime = new Date(lastUploadTime);
+    nextNotificationTime.setHours(nextNotificationTime.getHours() + intervalHours);
+
+    // Don't schedule if the time has already passed
+    if (nextNotificationTime.getTime() <= Date.now()) {
+      console.log('Next upload time has already passed, not scheduling');
+      return;
+    }
+
+    const intervalText = intervalHours === 1 ? 'hour' : `${intervalHours} hours`;
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Time for an Update! 🌅',
+        body: `You can now upload a new update to your partner (every ${intervalText})`,
+        sound: true,
+        data: { type: 'upload_interval' },
+      },
+      trigger: {
+        type: 'date',
+        date: nextNotificationTime,
+      },
+    });
+
+    scheduledNotificationIds = [notificationId];
+    console.log(`Scheduled next upload notification for ${nextNotificationTime.toISOString()}`);
+  } catch (error) {
+    console.error('Error scheduling next upload notification:', error);
+  }
+};
+
+/**
  * Cancel all scheduled hourly notifications
  */
 export const cancelHourlyNotifications = async (): Promise<void> => {
@@ -235,7 +307,18 @@ export const updateNotificationSchedule = async (userId: string, isAwake: boolea
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:162',message:'updateNotificationSchedule called',data:{isAwake},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
   // #endregion
-  await scheduleHourlyNotifications(userId, isAwake);
+  // If user is awake and notifications are enabled, schedule next upload notification
+  // Otherwise, cancel all notifications
+  try {
+    const userData = await getUserData(userId);
+    if (isAwake && userData?.notificationsEnabled !== false) {
+      await scheduleNextUploadNotification(userId);
+    } else {
+      await cancelHourlyNotifications();
+    }
+  } catch (error) {
+    console.error('Error updating notification schedule:', error);
+  }
 };
 
 /**
@@ -376,7 +459,8 @@ export const initializeNotifications = async (userId: string, isAwake: boolean):
   // Register for push notifications
   await registerForPushNotifications(userId);
   
-  await scheduleHourlyNotifications(userId, isAwake);
+  // Schedule next upload notification based on last upload timestamp
+  await scheduleNextUploadNotification(userId);
   isInitialized = false; // Reset for new session
   lastPartnerPhotoCount = 0;
   lastPartnerPhotoId = null;

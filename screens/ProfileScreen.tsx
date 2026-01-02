@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,68 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
-import { getUserData, verifyMutualMatch, UserData, updateUploadInterval } from '../services/userService';
+import { getUserData, verifyMutualMatch, UserData, updateUploadInterval, updateNotificationPreference } from '../services/userService';
+import { cancelHourlyNotifications, scheduleNextUploadNotification } from '../services/notificationService';
 import { RootStackParamList } from '../types/navigation';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
+
+// Custom Switch Component
+const Switch: React.FC<{
+  value: boolean;
+  onValueChange: () => void;
+  disabled?: boolean;
+}> = ({ value, onValueChange, disabled = false }) => {
+  const translateX = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(translateX, {
+      toValue: value ? 1 : 0,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+  }, [value, translateX]);
+
+  const switchWidth = 52;
+  const switchHeight = 32;
+  const thumbSize = 24;
+  const thumbTranslate = translateX.interpolate({
+    inputRange: [0, 1],
+    outputRange: [4, switchWidth - thumbSize - 4],
+  });
+
+  return (
+    <TouchableOpacity
+      onPress={onValueChange}
+      disabled={disabled}
+      activeOpacity={0.8}
+      style={styles.switchContainer}
+    >
+      <View
+        style={[
+          styles.switchTrack,
+          value && styles.switchTrackActive,
+          disabled && styles.switchDisabled,
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.switchThumb,
+            {
+              transform: [{ translateX: thumbTranslate }],
+            },
+          ]}
+        />
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
@@ -24,6 +78,8 @@ const ProfileScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedInterval, setSelectedInterval] = useState<number>(1);
   const [saving, setSaving] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -40,6 +96,8 @@ const ProfileScreen: React.FC = () => {
         setUserData(currentUserData);
         // Set selected interval (default to 1 hour if not set)
         setSelectedInterval(currentUserData?.uploadIntervalHours || 1);
+        // Set notification preference (default to true if not set)
+        setNotificationsEnabled(currentUserData?.notificationsEnabled !== false);
 
         // Get partner data if matched
         if (currentUserData?.matchedWith) {
@@ -81,6 +139,38 @@ const ProfileScreen: React.FC = () => {
       Alert.alert('Error', 'Failed to update upload interval. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleNotificationToggle = async () => {
+    if (!user || savingNotifications) return;
+    
+    const newValue = !notificationsEnabled;
+    setSavingNotifications(true);
+    
+    try {
+      await updateNotificationPreference(user.uid, newValue);
+      setNotificationsEnabled(newValue);
+      
+      // Update actual notifications based on preference
+      if (newValue) {
+        // Re-enable notifications - schedule next upload notification
+        await scheduleNextUploadNotification(user.uid);
+      } else {
+        // Disable notifications
+        await cancelHourlyNotifications();
+      }
+      
+      // Reload user data to get updated value
+      const updatedUserData = await getUserData(user.uid);
+      setUserData(updatedUserData);
+    } catch (error) {
+      console.error('Error updating notification preference:', error);
+      Alert.alert('Error', 'Failed to update notification preference. Please try again.');
+      // Revert the toggle on error
+      setNotificationsEnabled(!newValue);
+    } finally {
+      setSavingNotifications(false);
     }
   };
 
@@ -133,7 +223,7 @@ const ProfileScreen: React.FC = () => {
           </View>
         </View>
 
-        <View style={styles.profileSection}>
+        <View style={[styles.profileSection, styles.updateIntervalSection]}>
           <Text style={styles.sectionLabel}>Update Interval</Text>
           <Text style={styles.sectionDescription}>
             How often you can send an update
@@ -162,7 +252,6 @@ const ProfileScreen: React.FC = () => {
               </TouchableOpacity>
             ))}
           </View>
-          <View style={styles.intervalSelectorSpacer} />
           {saving && (
             <View style={styles.savingIndicator}>
               <ActivityIndicator size="small" color="#D4A574" />
@@ -171,10 +260,33 @@ const ProfileScreen: React.FC = () => {
           )}
         </View>
 
+        {/* Notifications Toggle */}
+        <View style={styles.profileSection}>
+          <View style={styles.notificationHeader}>
+            <View style={styles.notificationHeaderText}>
+              <Text style={styles.sectionLabel}>Notifications</Text>
+              <Text style={styles.sectionDescription}>
+                Enable or disable app notifications
+              </Text>
+            </View>
+            <View style={styles.switchWrapper}>
+              {savingNotifications ? (
+                <ActivityIndicator size="small" color="#D4A574" />
+              ) : (
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={handleNotificationToggle}
+                  disabled={savingNotifications}
+                />
+              )}
+            </View>
+          </View>
+        </View>
+
         {/* View All Buttons */}
         <View style={styles.viewAllButtonsContainer}>
           <TouchableOpacity
-            style={[styles.viewAllButton, styles.viewAllButtonFirst]}
+            style={styles.viewAllButton}
             onPress={() => {
               navigation.navigate('LoveHour', { openGallery: 'partner' });
             }}
@@ -250,19 +362,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   profileSection: {
-    marginBottom: 50,
+    marginBottom: 32,
+  },
+  updateIntervalSection: {
+    marginBottom: 8,
   },
   sectionLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: '#6B5B4A',
-    marginBottom: 12,
-    marginLeft: 4,
+    marginBottom: 8,
   },
   nameCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 20,
+    padding: 18,
     borderWidth: 2,
     borderColor: '#D4A574',
     shadowColor: '#8B6F47',
@@ -273,6 +387,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    marginTop: 4,
   },
   nameText: {
     fontSize: 20,
@@ -285,27 +400,81 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   sectionDescription: {
-    fontSize: 14,
-    color: '#6B5B4A',
-    marginBottom: 16,
-    marginLeft: 4,
+    fontSize: 13,
+    color: '#8B6F47',
+    lineHeight: 18,
   },
   intervalSelector: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 0,
+    marginTop: 4,
+    marginBottom: 12,
   },
-  intervalSelectorSpacer: {
-    height: 20,
-    width: '100%',
+  notificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  notificationHeaderText: {
+    flex: 1,
+    marginRight: 16,
+  },
+  switchWrapper: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  switchContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  switchTrack: {
+    width: 52,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E0E0E0',
+    justifyContent: 'center',
+    padding: 4,
+  },
+  switchTrackActive: {
+    backgroundColor: '#D4A574',
+  },
+  switchDisabled: {
+    opacity: 0.5,
+  },
+  switchThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
   },
   intervalOption: {
     flex: 1,
     minWidth: '30%',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     backgroundColor: '#fff',
     borderWidth: 2,
     borderColor: '#D4A574',
@@ -314,10 +483,10 @@ const styles = StyleSheet.create({
     shadowColor: '#8B6F47',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     elevation: 2,
   },
   intervalOptionSelected: {
@@ -342,7 +511,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
+    marginTop: 16,
+    marginBottom: 8,
     gap: 8,
   },
   savingText: {
@@ -351,8 +521,9 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   viewAllButtonsContainer: {
-    marginTop: 40,
-    marginBottom: 30,
+    marginTop: 8,
+    marginBottom: 24,
+    gap: 12,
   },
   viewAllButton: {
     width: '100%',
@@ -363,7 +534,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#8B6F47',
     alignItems: 'center',
-    marginBottom: 12,
     shadowColor: '#8B6F47',
     shadowOffset: {
       width: 0,
@@ -373,24 +543,20 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  viewAllButtonFirst: {
-    marginTop: 0,
-  },
   viewAllButtonText: {
     fontSize: 16,
     color: '#fff',
     fontWeight: '700',
   },
   signOutButton: {
-    alignSelf: 'center',
     width: '100%',
     paddingHorizontal: 30,
-    paddingVertical: 15,
+    paddingVertical: 16,
     borderRadius: 12,
     backgroundColor: '#fff',
     borderWidth: 2,
     borderColor: '#D4A574',
-    marginTop: 20,
+    marginTop: 8,
     marginBottom: 0,
     alignItems: 'center',
     shadowColor: '#8B6F47',

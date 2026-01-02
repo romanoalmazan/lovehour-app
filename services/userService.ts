@@ -46,6 +46,7 @@ export interface UserData {
   lastGoodnightTime?: any | null;
   lastGoodmorningTime?: any | null;
   pushToken?: string | null; // Expo push notification token
+  notificationsEnabled?: boolean; // Whether notifications are enabled
 }
 
 export interface Photo {
@@ -860,6 +861,18 @@ export const updateLastUploadTimestamp = async (userId: string): Promise<void> =
       // Keep lastUploadHour for backward compatibility (deprecated)
       lastUploadHour: new Date().getHours()
     });
+
+    // Schedule next upload notification if notifications are enabled
+    try {
+      const userData = await getUserData(userId);
+      if (userData?.notificationsEnabled !== false) {
+        const { scheduleNextUploadNotification } = await import('./notificationService');
+        await scheduleNextUploadNotification(userId);
+      }
+    } catch (notificationError) {
+      // Don't fail the upload if notification scheduling fails
+      console.error('Error scheduling next upload notification:', notificationError);
+    }
   } catch (error: any) {
     console.error('Error updating last upload timestamp:', error);
     throw error;
@@ -896,6 +909,24 @@ export const updateUploadInterval = async (userId: string, intervalHours: number
     });
   } catch (error: any) {
     console.error('Error updating upload interval:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update notification preference for a user
+ * @param userId - The user ID
+ * @param enabled - Whether notifications should be enabled
+ */
+export const updateNotificationPreference = async (userId: string, enabled: boolean): Promise<void> => {
+  try {
+    await ensureFirestoreReady();
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      notificationsEnabled: enabled
+    });
+  } catch (error: any) {
+    console.error('Error updating notification preference:', error);
     throw error;
   }
 };
