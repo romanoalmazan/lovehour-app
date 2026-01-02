@@ -10,6 +10,7 @@ import HomeScreen from './screens/HomeScreen';
 import ChoosePartnerScreen from './screens/ChoosePartnerScreen';
 import LoveHourScreen from './screens/LoveHourScreen';
 import UserProfileSetupScreen from './screens/UserProfileSetupScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import { checkMatchStatus, subscribeToUserData } from './services/userService';
 
 const Stack = createNativeStackNavigator();
@@ -60,11 +61,15 @@ const AppNavigator: React.FC = () => {
             {hasProfile === false ? (
               <Stack.Screen name="UserProfileSetup" component={UserProfileSetupScreen} />
             ) : isMatched ? (
-              <Stack.Screen name="LoveHour" component={LoveHourScreen} />
+              <>
+                <Stack.Screen name="LoveHour" component={LoveHourScreen} />
+                <Stack.Screen name="Profile" component={ProfileScreen} />
+              </>
             ) : (
               <>
                 <Stack.Screen name="Home" component={HomeScreen} />
                 <Stack.Screen name="ChoosePartner" component={ChoosePartnerScreen} />
+                <Stack.Screen name="Profile" component={ProfileScreen} />
               </>
             )}
           </>

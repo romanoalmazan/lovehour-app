@@ -19,8 +19,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
+import { RootStackParamList } from '../types/navigation';
 import { 
   uploadUserImage, 
   getUserData, 
@@ -289,7 +292,10 @@ const PhotoGallery = memo(({
   return true; // Props are equal, skip re-render
 });
 
+type LoveHourScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'LoveHour'>;
+
 const LoveHourScreen: React.FC = () => {
+  const navigation = useNavigation<LoveHourScreenNavigationProp>();
   const { user, signOut } = useAuth();
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -448,6 +454,8 @@ const LoveHourScreen: React.FC = () => {
         const userData = await getUserData(user.uid);
         const initialIsAwake = userData?.isAwake !== false;
         await initializeNotifications(initialIsAwake);
+        // After initialization, updateNotificationSchedule will be called by the userData subscription
+        // so we don't need to call it again here to avoid duplicate scheduling
       } catch (error) {
         console.error('Error initializing notifications:', error);
       }
@@ -668,7 +676,20 @@ const LoveHourScreen: React.FC = () => {
         }
       >
         <View style={styles.header}>
-          <Text style={styles.title}>LoveHour</Text>
+          <View style={styles.headerTop}>
+            <Text style={styles.title}>LoveHour</Text>
+            <TouchableOpacity
+              style={styles.profileButton}
+              onPress={() => navigation.navigate('Profile')}
+              activeOpacity={0.8}
+            >
+              <Image
+                source={require('../components/images/profile.png')}
+                style={styles.profileIcon}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </View>
           
           {/* Status Indicator and Countdown Timer */}
           <View style={styles.statusContainer}>
@@ -1044,12 +1065,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+  },
   title: {
     fontSize: 42,
     fontWeight: 'bold',
     color: '#8B6F47',
-    marginBottom: 8,
     letterSpacing: 1,
+    flex: 1,
+  },
+  profileButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profileIcon: {
+    width: 24,
+    height: 24,
   },
   subtitle: {
     fontSize: 20,

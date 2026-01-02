@@ -4,4 +4,5 @@ export type RootStackParamList = {
   LoveHour: undefined;
   UserProfileSetup: undefined;
   ChoosePartner: undefined;
+  Profile: undefined;
 };
