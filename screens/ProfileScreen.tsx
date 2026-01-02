@@ -258,6 +258,7 @@ const ProfileScreen: React.FC = () => {
               <Text style={styles.savingText}>Saving...</Text>
             </View>
           )}
+          <View style={styles.intervalSectionSpacer} />
         </View>
 
         {/* Notifications Toggle */}
@@ -365,7 +366,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   updateIntervalSection: {
-    marginBottom: 8,
+    marginBottom: 60,
   },
   sectionLabel: {
     fontSize: 16,
@@ -409,7 +410,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     marginTop: 4,
-    marginBottom: 12,
+    marginBottom: 0,
+  },
+  intervalSectionSpacer: {
+    height: 30,
+    width: '100%',
   },
   notificationHeader: {
     flexDirection: 'row',
