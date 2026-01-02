@@ -1,6 +1,14 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { getCurrentHourWindow, getTimeUntilNextHour, getUserData } from './userService';
+import { getCurrentHourWindow, getTimeUntilNextHour, getUserData, savePushToken, getPartnerPushToken } from './userService';
+
+// Dynamically import expo-device (may not be installed)
+let Device: any = null;
+try {
+  Device = require('expo-device');
+} catch (e) {
+  console.warn('expo-device not installed. Push notifications may not work on simulators.');
+}
 
 // Configure notification handler behavior
 Notifications.setNotificationHandler({
@@ -14,6 +22,7 @@ Notifications.setNotificationHandler({
 // Store scheduled notification IDs for cancellation
 let scheduledNotificationIds: string[] = [];
 let lastPartnerPhotoCount: number = 0;
+let lastPartnerPhotoId: string | null = null; // Track the most recent photo ID
 let isInitialized: boolean = false;
 let isScheduling: boolean = false; // Prevent concurrent scheduling
 
@@ -231,31 +240,125 @@ export const updateNotificationSchedule = async (userId: string, isAwake: boolea
 
 /**
  * Check for new partner photos and send notification if detected
- * @param currentPhotoCount - Current number of partner photos
+ * @param photos - Array of partner photos (ordered by createdAt desc)
  * @param partnerName - Optional partner name
  */
 export const checkAndNotifyPartnerUpdate = async (
-  currentPhotoCount: number,
+  photos: Array<{ id?: string }>,
   partnerName?: string
 ): Promise<void> => {
+  const currentPhotoCount = photos.length;
+  const mostRecentPhotoId = photos.length > 0 && photos[0].id ? photos[0].id : null;
+  
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:171',message:'checkAndNotifyPartnerUpdate called',data:{currentPhotoCount,lastPartnerPhotoCount,isInitialized,partnerName},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:171',message:'checkAndNotifyPartnerUpdate called',data:{currentPhotoCount,lastPartnerPhotoCount,mostRecentPhotoId,lastPartnerPhotoId,isInitialized,partnerName},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
   // #endregion
-  // Send notification if photo count increased (skip only on initial load when count hasn't changed)
-  if (isInitialized && currentPhotoCount > lastPartnerPhotoCount) {
+  
+  // Check if there's a new photo by comparing the most recent photo ID
+  // This is more reliable than just counting photos
+  const hasNewPhoto = isInitialized && 
+    mostRecentPhotoId !== null && 
+    mostRecentPhotoId !== lastPartnerPhotoId &&
+    (currentPhotoCount > lastPartnerPhotoCount || lastPartnerPhotoId === null);
+  
+  if (hasNewPhoto) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:176',message:'Condition met, calling sendPartnerUpdateNotification',data:{currentPhotoCount,lastPartnerPhotoCount},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:176',message:'Condition met, calling sendPartnerUpdateNotification',data:{currentPhotoCount,lastPartnerPhotoCount,mostRecentPhotoId,lastPartnerPhotoId},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
     await sendPartnerUpdateNotification(partnerName);
   } else {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:179',message:'Condition not met, skipping notification',data:{isInitialized,currentPhotoCount,lastPartnerPhotoCount,willUpdate:currentPhotoCount>lastPartnerPhotoCount},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:179',message:'Condition not met, skipping notification',data:{isInitialized,currentPhotoCount,lastPartnerPhotoCount,mostRecentPhotoId,lastPartnerPhotoId,hasNewPhoto},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
   }
   
   // Update state after checking (this ensures next call will have isInitialized = true)
   lastPartnerPhotoCount = currentPhotoCount;
+  lastPartnerPhotoId = mostRecentPhotoId;
   isInitialized = true;
+};
+
+/**
+ * Register for push notifications and save token to Firestore
+ * @param userId - The user ID
+ * @returns The push token or null if registration failed
+ */
+export const registerForPushNotifications = async (userId: string): Promise<string | null> => {
+  try {
+    // Check if running on a physical device (if expo-device is available)
+    if (Device && !Device.isDevice) {
+      console.warn('Push notifications only work on physical devices');
+      return null;
+    }
+
+    // Request permissions
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      console.warn('Notification permissions not granted');
+      return null;
+    }
+
+    // Get the push token
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '2e9bb7e4-8905-4a69-b4de-2eae549fdfbe', // From app.json extra.eas.projectId
+    });
+    const pushToken = tokenData.data;
+
+    // Save token to Firestore
+    if (pushToken) {
+      await savePushToken(userId, pushToken);
+      console.log('Push token registered and saved:', pushToken);
+    }
+
+    return pushToken;
+  } catch (error: any) {
+    console.error('Error registering for push notifications:', error);
+    return null;
+  }
+};
+
+/**
+ * Send push notification to partner when user uploads a photo
+ * This should be called from a Cloud Function, but we provide a client-side version for testing
+ * @param partnerPushToken - Partner's Expo push token
+ * @param partnerName - Optional partner name
+ */
+export const sendPushNotificationToPartner = async (
+  partnerPushToken: string,
+  partnerName?: string
+): Promise<void> => {
+  try {
+    const title = partnerName 
+      ? `New Update from ${partnerName}! 💕`
+      : 'New Update from Partner! 💕';
+
+    // Send push notification via Expo's API
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: partnerPushToken,
+        sound: 'default',
+        title: title,
+        body: 'Your partner just shared a new photo',
+        data: { type: 'partner_update' },
+        priority: 'high',
+      }),
+    });
+
+    const result = await response.json();
+    if (result.data?.status === 'ok') {
+      console.log('Push notification sent successfully');
+    } else {
+      console.error('Failed to send push notification:', result);
+    }
+  } catch (error: any) {
+    console.error('Error sending push notification:', error);
+  }
 };
 
 /**
@@ -269,9 +372,14 @@ export const initializeNotifications = async (userId: string, isAwake: boolean):
   fetch('http://127.0.0.1:7242/ingest/ef6cb03f-12f2-44a7-bf63-f808211cd3b1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'notificationService.ts:189',message:'initializeNotifications called',data:{isAwake},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
   // #endregion
   await requestPermissions();
+  
+  // Register for push notifications
+  await registerForPushNotifications(userId);
+  
   await scheduleHourlyNotifications(userId, isAwake);
   isInitialized = false; // Reset for new session
   lastPartnerPhotoCount = 0;
+  lastPartnerPhotoId = null;
 };
 
 /**
@@ -281,6 +389,7 @@ export const resetNotifications = async (): Promise<void> => {
   await cancelHourlyNotifications();
   isInitialized = false;
   lastPartnerPhotoCount = 0;
+  lastPartnerPhotoId = null;
 };
 
 /**

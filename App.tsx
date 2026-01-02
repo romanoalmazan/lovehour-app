@@ -11,6 +11,7 @@ import ChoosePartnerScreen from './screens/ChoosePartnerScreen';
 import LoveHourScreen from './screens/LoveHourScreen';
 import UserProfileSetupScreen from './screens/UserProfileSetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import TermsOfServiceScreen from './screens/TermsOfServiceScreen';
 import { checkMatchStatus, subscribeToUserData } from './services/userService';
 
 const Stack = createNativeStackNavigator();
@@ -20,24 +21,29 @@ const AppNavigator: React.FC = () => {
   const [isMatched, setIsMatched] = useState<boolean | null>(null);
   const [checkingMatch, setCheckingMatch] = useState(true);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!user) {
       setIsMatched(null);
       setCheckingMatch(false);
       setHasProfile(null);
+      setTermsAccepted(null);
       return;
     }
 
-    // Subscribe to user data changes to detect match status and profile completeness
+    // Subscribe to user data changes to detect match status, profile completeness, and terms acceptance
     const unsubscribe = subscribeToUserData(user.uid, (userData) => {
       if (userData) {
         setIsMatched(userData.matchedWith !== null && userData.matchedWith !== undefined);
         // Profile is complete if friendCode AND fullName AND gender exist
         setHasProfile(!!(userData.friendCode && userData.fullName && userData.gender));
+        // Terms accepted (default to false for backward compatibility)
+        setTermsAccepted(userData.termsAccepted === true);
       } else {
         setIsMatched(false);
         setHasProfile(false);
+        setTermsAccepted(false);
       }
       setCheckingMatch(false);
     });
@@ -58,7 +64,9 @@ const AppNavigator: React.FC = () => {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>
-            {hasProfile === false ? (
+            {termsAccepted === false ? (
+              <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
+            ) : hasProfile === false ? (
               <Stack.Screen name="UserProfileSetup" component={UserProfileSetupScreen} />
             ) : isMatched ? (
               <>

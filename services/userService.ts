@@ -41,8 +41,11 @@ export interface UserData {
   lastUploadHour?: number | null; // Deprecated: kept for backward compatibility, use lastUploadTimestamp instead
   lastUploadTimestamp?: any | null; // Firestore timestamp of last upload
   uploadIntervalHours?: number; // Upload interval in hours (1, 3, 5, 7, 9, or 11)
+  termsAccepted?: boolean; // Whether user has accepted terms of service
+  termsAcceptedAt?: any | null; // Firestore timestamp of when terms were accepted
   lastGoodnightTime?: any | null;
   lastGoodmorningTime?: any | null;
+  pushToken?: string | null; // Expo push notification token
 }
 
 export interface Photo {
@@ -603,6 +606,23 @@ export const uploadUserImage = async (
       createdAt: serverTimestamp()
     });
 
+    // 6. Send push notification to partner (if matched)
+    // Note: This is a client-side implementation. For production, use Cloud Functions
+    try {
+      const partnerPushToken = await getPartnerPushToken(userId);
+      if (partnerPushToken) {
+        // Import notification service dynamically to avoid circular dependency
+        const { sendPushNotificationToPartner } = await import('./notificationService');
+        const userData = await getUserData(userId);
+        const partnerData = userData?.matchedWith ? await getUserData(userData.matchedWith) : null;
+        const partnerName = partnerData?.fullName || partnerData?.displayName;
+        await sendPushNotificationToPartner(partnerPushToken, partnerName);
+      }
+    } catch (error: any) {
+      // Don't fail the upload if push notification fails
+      console.error('Error sending push notification:', error);
+    }
+
     return { success: true, downloadURL };
   } catch (error: any) {
     console.error('Error uploading image:', error);
@@ -881,6 +901,29 @@ export const updateUploadInterval = async (userId: string, intervalHours: number
 };
 
 /**
+ * Accept terms of service for a user
+ * @param userId - The user ID
+ * @returns Promise with success status and message
+ */
+export const acceptTermsOfService = async (userId: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+  try {
+    await ensureFirestoreReady();
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      termsAccepted: true,
+      termsAcceptedAt: serverTimestamp()
+    });
+    return { success: true, message: 'Terms of service accepted' };
+  } catch (error: any) {
+    console.error('Error accepting terms of service:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to accept terms of service'
+    };
+  }
+};
+
+/**
  * Send goodnight update (upload photo and set user to asleep)
  * @param userId - The user ID
  * @param imageUri - Local URI of the image to upload
@@ -952,6 +995,20 @@ export const sendGoodnightUpdate = async (
       lastUploadTimestamp: null,
       lastUploadHour: null // Keep for backward compatibility
     });
+
+    // 7. Send push notification to partner
+    try {
+      const partnerPushToken = await getPartnerPushToken(userId);
+      if (partnerPushToken) {
+        const { sendPushNotificationToPartner } = await import('./notificationService');
+        const userData = await getUserData(userId);
+        const partnerData = userData?.matchedWith ? await getUserData(userData.matchedWith) : null;
+        const partnerName = partnerData?.fullName || partnerData?.displayName;
+        await sendPushNotificationToPartner(partnerPushToken, partnerName);
+      }
+    } catch (error: any) {
+      console.error('Error sending push notification:', error);
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -1036,6 +1093,20 @@ export const sendGoodmorningUpdate = async (
       lastUploadHour: null // Keep for backward compatibility
     });
 
+    // 7. Send push notification to partner
+    try {
+      const partnerPushToken = await getPartnerPushToken(userId);
+      if (partnerPushToken) {
+        const { sendPushNotificationToPartner } = await import('./notificationService');
+        const userData = await getUserData(userId);
+        const partnerData = userData?.matchedWith ? await getUserData(userData.matchedWith) : null;
+        const partnerName = partnerData?.fullName || partnerData?.displayName;
+        await sendPushNotificationToPartner(partnerPushToken, partnerName);
+      }
+    } catch (error: any) {
+      console.error('Error sending push notification:', error);
+    }
+
     return { success: true };
   } catch (error: any) {
     console.error('Error sending goodmorning update:', error);
@@ -1043,6 +1114,47 @@ export const sendGoodmorningUpdate = async (
       success: false,
       error: error.message || 'Failed to send goodmorning update'
     };
+  }
+};
+
+/**
+ * Save push notification token for a user
+ * @param userId - The user ID
+ * @param pushToken - Expo push notification token
+ */
+export const savePushToken = async (userId: string, pushToken: string): Promise<void> => {
+  try {
+    await ensureFirestoreReady();
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      pushToken: pushToken
+    });
+    console.log('Push token saved successfully');
+  } catch (error: any) {
+    console.error('Error saving push token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get partner's push notification token
+ * @param userId - The current user ID
+ * @returns Partner's push token or null
+ */
+export const getPartnerPushToken = async (userId: string): Promise<string | null> => {
+  try {
+    await ensureFirestoreReady();
+    const userData = await getUserData(userId);
+    
+    if (!userData?.matchedWith) {
+      return null;
+    }
+    
+    const partnerData = await getUserData(userData.matchedWith);
+    return partnerData?.pushToken || null;
+  } catch (error: any) {
+    console.error('Error getting partner push token:', error);
+    return null;
   }
 };
 

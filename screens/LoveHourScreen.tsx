@@ -368,7 +368,7 @@ const LoveHourScreen: React.FC = () => {
             unsubscribePartnerPhotos = subscribeToUserPhotos(userData.matchedWith, (photos) => {
               setPartnerPhotos(photos);
               // Check for new partner photos and send notification
-              checkAndNotifyPartnerUpdate(photos.length, partnerNameForNotifications);
+              checkAndNotifyPartnerUpdate(photos, partnerNameForNotifications);
             });
           } else {
             setPartnerPhotos([]);

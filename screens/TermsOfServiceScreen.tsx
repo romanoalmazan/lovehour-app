@@ -57,7 +57,7 @@ const TermsOfServiceScreen: React.FC = () => {
         // The subscription in App.tsx will detect the change and show UserProfileSetup screen
         setLoading(false);
       } else {
-        Alert.alert('Error', result.message);
+        Alert.alert('Error', result.error || result.message || 'Failed to accept terms of service');
         setLoading(false);
       }
     } catch (error: any) {

@@ -5,4 +5,5 @@ export type RootStackParamList = {
   UserProfileSetup: undefined;
   ChoosePartner: undefined;
   Profile: undefined;
+  TermsOfService: undefined;
 };
