@@ -34,9 +34,11 @@ const NotepadScreen: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [userGenders, setUserGenders] = useState<{ [uid: string]: 'male' | 'female' | 'other' }>({});
+  const [currentUserGender, setCurrentUserGender] = useState<'male' | 'female' | 'other' | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Get partner ID and set up real-time subscription
+  // Get partner ID, current user gender, and set up real-time subscription
   useEffect(() => {
     if (!user) return;
 
@@ -49,6 +51,21 @@ const NotepadScreen: React.FC = () => {
           const userData = await getUserData(user.uid);
           if (userData?.matchedWith) {
             setPartnerId(userData.matchedWith);
+            // Store current user's gender
+            if (userData.gender) {
+              setCurrentUserGender(userData.gender);
+              setUserGenders((prev) => ({
+                ...prev,
+                [user.uid]: userData.gender!,
+              }));
+            }
+            // Store partner's gender
+            if (verification.partnerData.gender) {
+              setUserGenders((prev) => ({
+                ...prev,
+                [userData.matchedWith]: verification.partnerData!.gender!,
+              }));
+            }
           } else {
             setLoading(false);
           }
@@ -63,6 +80,48 @@ const NotepadScreen: React.FC = () => {
 
     setupNotes();
   }, [user]);
+
+  // Fetch gender for users who updated notes
+  useEffect(() => {
+    const fetchUserGenders = async () => {
+      if (!user || !partnerId) return;
+
+      const userIdsToFetch = new Set<string>();
+      notes.forEach((note) => {
+        if (note.updatedBy && !userGenders[note.updatedBy]) {
+          userIdsToFetch.add(note.updatedBy);
+        }
+      });
+
+      if (userIdsToFetch.size === 0) return;
+
+      const genderPromises = Array.from(userIdsToFetch).map(async (uid) => {
+        try {
+          const userData = await getUserData(uid);
+          if (userData?.gender) {
+            return { uid, gender: userData.gender };
+          }
+        } catch (error) {
+          console.error(`Error fetching gender for user ${uid}:`, error);
+        }
+        return null;
+      });
+
+      const results = await Promise.all(genderPromises);
+      const newGenders: { [uid: string]: 'male' | 'female' | 'other' } = {};
+      results.forEach((result) => {
+        if (result) {
+          newGenders[result.uid] = result.gender;
+        }
+      });
+
+      if (Object.keys(newGenders).length > 0) {
+        setUserGenders((prev) => ({ ...prev, ...newGenders }));
+      }
+    };
+
+    fetchUserGenders();
+  }, [notes, user, partnerId, userGenders]);
 
   // Subscribe to real-time notes updates
   useEffect(() => {
@@ -268,8 +327,36 @@ const NotepadScreen: React.FC = () => {
     setShowDropdown(false);
   };
 
+  // Helper function to get text color based on gender
+  const getTextColorForGender = (gender: 'male' | 'female' | 'other' | null | undefined): string => {
+    if (gender === 'male') {
+      return '#0066CC'; // Blue for male
+    } else if (gender === 'female') {
+      return '#FF69B4'; // Pink for female
+    }
+    return '#333'; // Default dark gray for other or unknown
+  };
+
+  // Get text color for the selected note
+  const getSelectedNoteTextColor = (): string => {
+    if (!selectedNoteId) return '#333';
+    const selectedNote = notes.find((note) => note.id === selectedNoteId);
+    if (!selectedNote) return '#333';
+    
+    // If user is currently typing (has unsaved changes), use their gender color
+    const hasUnsavedChanges = localContent !== selectedNote.content;
+    if (hasUnsavedChanges && currentUserGender) {
+      return getTextColorForGender(currentUserGender);
+    }
+    
+    // Otherwise, use the gender of the user who last updated the note
+    const lastUpdatedByGender = userGenders[selectedNote.updatedBy];
+    return getTextColorForGender(lastUpdatedByGender);
+  };
+
   const selectedNote = notes.find((note) => note.id === selectedNoteId);
   const noteCount = notes.length;
+  const textColor = getSelectedNoteTextColor();
 
   if (loading) {
     return (
@@ -386,7 +473,7 @@ const NotepadScreen: React.FC = () => {
         {selectedNote ? (
           <View style={styles.inputContainer}>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { color: textColor }]}
               value={localContent}
               onChangeText={handleContentChange}
               placeholder="Start typing your note here..."
