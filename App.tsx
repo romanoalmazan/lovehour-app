@@ -1,20 +1,85 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Image } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import ChoosePartnerScreen from './screens/ChoosePartnerScreen';
 import LoveHourScreen from './screens/LoveHourScreen';
+import ScheduleScreen from './screens/ScheduleScreen';
 import UserProfileSetupScreen from './screens/UserProfileSetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import TermsOfServiceScreen from './screens/TermsOfServiceScreen';
 import { checkMatchStatus, subscribeToUserData } from './services/userService';
+import { BottomTabParamList, RootStackParamList } from './types/navigation';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<BottomTabParamList>();
+
+const BottomTabNavigator: React.FC = () => {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#D4A574',
+        tabBarInactiveTintColor: '#8B6F47',
+        tabBarStyle: {
+          backgroundColor: '#ffe6d5',
+          borderTopWidth: 2,
+          borderTopColor: '#D4A574',
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+        },
+        tabBarLabelStyle: {
+          fontSize: 14,
+          fontWeight: '600',
+        },
+      }}
+    >
+      <Tab.Screen 
+        name="LoveHour" 
+        component={LoveHourScreen}
+        options={{
+          tabBarLabel: 'LoveHour',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Image
+              source={require('./components/images/lovehourtab.png')}
+              style={{
+                width: size,
+                height: size,
+                opacity: focused ? 1 : 0.7,
+              }}
+              resizeMode="contain"
+            />
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Schedule" 
+        component={ScheduleScreen}
+        options={{
+          tabBarLabel: 'Schedule',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Image
+              source={require('./components/images/calendartab.png')}
+              style={{
+                width: size * 1.2,
+                height: size * 1.2,
+                opacity: focused ? 1 : 0.7,
+              }}
+              resizeMode="contain"
+            />
+          ),
+        }}
+      />
+    </Tab.Navigator>
+  );
+};
 
 const AppNavigator: React.FC = () => {
   const { user, loading, profileComplete } = useAuth();
@@ -70,7 +135,7 @@ const AppNavigator: React.FC = () => {
               <Stack.Screen name="UserProfileSetup" component={UserProfileSetupScreen} />
             ) : isMatched ? (
               <>
-                <Stack.Screen name="LoveHour" component={LoveHourScreen} />
+                <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
                 <Stack.Screen name="Profile" component={ProfileScreen} />
               </>
             ) : (
