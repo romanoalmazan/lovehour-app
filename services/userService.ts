@@ -615,9 +615,9 @@ export const uploadUserImage = async (
         // Import notification service dynamically to avoid circular dependency
         const { sendPushNotificationToPartner } = await import('./notificationService');
         const userData = await getUserData(userId);
-        const partnerData = userData?.matchedWith ? await getUserData(userData.matchedWith) : null;
-        const partnerName = partnerData?.fullName || partnerData?.displayName;
-        await sendPushNotificationToPartner(partnerPushToken, partnerName);
+        // Use the current user's name (the one uploading) in the notification
+        const senderName = userData?.fullName || userData?.displayName;
+        await sendPushNotificationToPartner(partnerPushToken, senderName);
       }
     } catch (error: any) {
       // Don't fail the upload if push notification fails
@@ -1033,9 +1033,9 @@ export const sendGoodnightUpdate = async (
       if (partnerPushToken) {
         const { sendPushNotificationToPartner } = await import('./notificationService');
         const userData = await getUserData(userId);
-        const partnerData = userData?.matchedWith ? await getUserData(userData.matchedWith) : null;
-        const partnerName = partnerData?.fullName || partnerData?.displayName;
-        await sendPushNotificationToPartner(partnerPushToken, partnerName);
+        // Use the current user's name (the one uploading) in the notification
+        const senderName = userData?.fullName || userData?.displayName;
+        await sendPushNotificationToPartner(partnerPushToken, senderName);
       }
     } catch (error: any) {
       console.error('Error sending push notification:', error);
@@ -1130,9 +1130,9 @@ export const sendGoodmorningUpdate = async (
       if (partnerPushToken) {
         const { sendPushNotificationToPartner } = await import('./notificationService');
         const userData = await getUserData(userId);
-        const partnerData = userData?.matchedWith ? await getUserData(userData.matchedWith) : null;
-        const partnerName = partnerData?.fullName || partnerData?.displayName;
-        await sendPushNotificationToPartner(partnerPushToken, partnerName);
+        // Use the current user's name (the one uploading) in the notification
+        const senderName = userData?.fullName || userData?.displayName;
+        await sendPushNotificationToPartner(partnerPushToken, senderName);
       }
     } catch (error: any) {
       console.error('Error sending push notification:', error);
