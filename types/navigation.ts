@@ -2,7 +2,7 @@ export type RootStackParamList = {
   Home: undefined;
   Auth: undefined;
   LoveHour: { openGallery?: 'your' | 'partner' } | undefined;
-  Schedule: undefined;
+  Notepad: undefined;
   UserProfileSetup: undefined;
   ChoosePartner: undefined;
   Profile: undefined;
@@ -12,5 +12,5 @@ export type RootStackParamList = {
 
 export type BottomTabParamList = {
   LoveHour: { openGallery?: 'your' | 'partner' } | undefined;
-  Schedule: undefined;
+  Notepad: undefined;
 };

@@ -10,7 +10,7 @@ import AuthScreen from './screens/AuthScreen';
 import HomeScreen from './screens/HomeScreen';
 import ChoosePartnerScreen from './screens/ChoosePartnerScreen';
 import LoveHourScreen from './screens/LoveHourScreen';
-import ScheduleScreen from './screens/ScheduleScreen';
+import NotepadScreen from './screens/NotepadScreen';
 import UserProfileSetupScreen from './screens/UserProfileSetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import TermsOfServiceScreen from './screens/TermsOfServiceScreen';
@@ -60,13 +60,13 @@ const BottomTabNavigator: React.FC = () => {
         }}
       />
       <Tab.Screen 
-        name="Schedule" 
-        component={ScheduleScreen}
+        name="Notepad" 
+        component={NotepadScreen}
         options={{
-          tabBarLabel: 'Schedule',
+          tabBarLabel: 'Notepad',
           tabBarIcon: ({ focused, color, size }) => (
             <Image
-              source={require('./components/images/calendartab.png')}
+              source={require('./components/images/notestab.png')}
               style={{
                 width: size * 1.2,
                 height: size * 1.2,
