@@ -22,6 +22,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../contexts/AuthContext';
 import { RootStackParamList } from '../types/navigation';
 import { 
@@ -535,7 +536,24 @@ const LoveHourScreen: React.FC = () => {
       });
 
       if (!result.canceled && result.assets[0]) {
-        setSelectedImage(result.assets[0].uri);
+        let imageUri = result.assets[0].uri;
+
+        // On iOS, flip the image horizontally to preserve mirrored selfie appearance
+        if (Platform.OS === 'ios') {
+          try {
+            const manipulatedImage = await ImageManipulator.manipulateAsync(
+              imageUri,
+              [{ flip: ImageManipulator.FlipType.Horizontal }],
+              { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+            );
+            imageUri = manipulatedImage.uri;
+          } catch (manipulateError) {
+            console.error('Error manipulating image:', manipulateError);
+            // Continue with original image if manipulation fails
+          }
+        }
+
+        setSelectedImage(imageUri);
         setUploadStatus('');
         setCaption('');
         setUploadType(type);
