@@ -32,6 +32,12 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "This app needs access to your camera to take photos for LoveHour."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "This app needs access to your photo library to select photos for LoveHour."

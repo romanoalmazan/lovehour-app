@@ -21,8 +21,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
+import CameraModal from '../components/CameraModal';
 import { useAuth } from '../contexts/AuthContext';
 import { RootStackParamList } from '../types/navigation';
 import { 
@@ -334,6 +333,9 @@ const LoveHourScreen: React.FC = () => {
   // Upload modal state
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [uploadType, setUploadType] = useState<'regular' | 'goodnight' | 'goodmorning'>('regular');
+  
+  // Camera modal state
+  const [cameraModalVisible, setCameraModalVisible] = useState(false);
 
   // Hourly upload system state
   const [isAwake, setIsAwake] = useState<boolean | null>(null);
@@ -517,52 +519,16 @@ const LoveHourScreen: React.FC = () => {
   }, [user]);
 
 
-  const pickImage = async (type: 'regular' | 'goodnight' | 'goodmorning' = 'regular') => {
-    // Request permissions
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Sorry, we need camera permissions to take photos!'
-      );
-      return;
-    }
+  const pickImage = (type: 'regular' | 'goodnight' | 'goodmorning' = 'regular') => {
+    setUploadType(type);
+    setCameraModalVisible(true);
+  };
 
-    try {
-      // Launch camera
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false,
-        quality: 1,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        let imageUri = result.assets[0].uri;
-
-        // On iOS, flip the image horizontally to preserve mirrored selfie appearance
-        if (Platform.OS === 'ios') {
-          try {
-            const manipulatedImage = await ImageManipulator.manipulateAsync(
-              imageUri,
-              [{ flip: ImageManipulator.FlipType.Horizontal }],
-              { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
-            );
-            imageUri = manipulatedImage.uri;
-          } catch (manipulateError) {
-            console.error('Error manipulating image:', manipulateError);
-            // Continue with original image if manipulation fails
-          }
-        }
-
-        setSelectedImage(imageUri);
-        setUploadStatus('');
-        setCaption('');
-        setUploadType(type);
-        setUploadModalVisible(true);
-      }
-    } catch (error: any) {
-      console.error('Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
-    }
+  const handleCameraCapture = (imageUri: string) => {
+    setSelectedImage(imageUri);
+    setUploadStatus('');
+    setCaption('');
+    setUploadModalVisible(true);
   };
 
   const handleGoodnight = () => {
@@ -1068,6 +1034,13 @@ const LoveHourScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Custom Camera Modal */}
+      <CameraModal
+        visible={cameraModalVisible}
+        onClose={() => setCameraModalVisible(false)}
+        onCapture={handleCameraCapture}
+      />
     </View>
   );
 };
