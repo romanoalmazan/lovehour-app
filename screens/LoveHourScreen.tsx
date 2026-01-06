@@ -979,22 +979,24 @@ const LoveHourScreen: React.FC = () => {
             </View>
             {viewingImage && (
               <>
-                <ScrollView
-                  style={styles.modalScrollView}
-                  contentContainerStyle={styles.modalScrollContent}
-                  minimumZoomScale={1}
-                  maximumZoomScale={5}
-                  showsVerticalScrollIndicator={true}
-                  showsHorizontalScrollIndicator={true}
-                  bouncesZoom={true}
-                  scrollEventThrottle={16}
-                >
-                  <Image
-                    source={{ uri: viewingImage.url }}
-                    style={styles.modalImage}
-                    resizeMode="contain"
-                  />
-                </ScrollView>
+                <View style={styles.modalImageFrame}>
+                  <ScrollView
+                    style={styles.modalScrollView}
+                    contentContainerStyle={styles.modalScrollContent}
+                    minimumZoomScale={1}
+                    maximumZoomScale={5}
+                    showsVerticalScrollIndicator={false}
+                    showsHorizontalScrollIndicator={false}
+                    bouncesZoom={true}
+                    scrollEventThrottle={16}
+                  >
+                    <Image
+                      source={{ uri: viewingImage.url }}
+                      style={styles.modalImage}
+                      resizeMode="contain"
+                    />
+                  </ScrollView>
+                </View>
                 <View style={styles.modalCaptionContainer}>
                   <Text style={styles.modalCaptionText}>{viewingImage.caption}</Text>
                 </View>
@@ -1379,6 +1381,24 @@ const styles = StyleSheet.create({
   modalDeleteText: {
     fontSize: 20,
   },
+  modalImageFrame: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#ffe6d5',
+    borderWidth: 4,
+    borderColor: '#D4A574',
+    padding: 8,
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+    overflow: 'hidden',
+  },
   modalScrollView: {
     flex: 1,
     width: '100%',
@@ -1387,27 +1407,38 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
+    width: Dimensions.get('window').width - 16,
+    height: Dimensions.get('window').height - 16,
   },
   modalImage: {
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
+    width: Dimensions.get('window').width - 16,
+    height: Dimensions.get('window').height - 16,
   },
   modalCaptionContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(255, 230, 213, 0.95)',
     padding: 20,
     paddingBottom: 40,
+    borderTopWidth: 2,
+    borderTopColor: '#D4A574',
+    shadowColor: '#8B6F47',
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   modalCaptionText: {
-    color: '#fff',
+    color: '#8B6F47',
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 22,
+    fontWeight: '600',
   },
   uploadModalContainer: {
     flex: 1,
