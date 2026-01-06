@@ -36,29 +36,54 @@ export const requestPermissions = async (): Promise<boolean> => {
     let finalStatus = existingStatus;
 
     if (existingStatus !== 'granted') {
+      console.log(`Requesting notification permissions (current status: ${existingStatus})`);
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      console.log(`Notification permission request result: ${status}`);
+    } else {
+      console.log('Notification permissions already granted');
     }
 
     if (finalStatus !== 'granted') {
-      console.warn('Notification permissions not granted');
+      console.warn(`Notification permissions not granted. Status: ${finalStatus}`);
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        console.warn('Android 13+ requires POST_NOTIFICATIONS permission. Please check app permissions in settings.');
+      }
       return false;
     }
 
     // Configure notification channel for Android
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-        sound: 'default',
-      });
+      try {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          sound: 'default',
+          showBadge: true,
+          enableVibrate: true,
+          enableLights: true,
+        });
+        console.log('Android notification channel configured successfully');
+      } catch (channelError: any) {
+        console.error('Error setting up Android notification channel:', {
+          error: channelError.message || channelError,
+          platform: Platform.OS,
+          version: Platform.Version,
+        });
+        // Don't fail permission request if channel setup fails - channel might already exist
+      }
     }
 
     return true;
-  } catch (error) {
-    console.error('Error requesting notification permissions:', error);
+  } catch (error: any) {
+    console.error('Error requesting notification permissions:', {
+      error: error.message || error,
+      stack: error.stack,
+      platform: Platform.OS,
+      version: Platform.Version,
+    });
     return false;
   }
 };
@@ -87,32 +112,44 @@ export const scheduleHourlyNotifications = async (userId: string, isAwake: boole
  * @param userId - The user ID
  */
 export const scheduleNextUploadNotification = async (userId: string): Promise<void> => {
+  // Prevent concurrent scheduling
+  if (isScheduling) {
+    console.log('Notification scheduling already in progress, skipping duplicate call');
+    return;
+  }
+
+  isScheduling = true;
+
   try {
-    // Cancel existing notifications first
+    // Cancel ALL existing upload interval notifications first
     await cancelHourlyNotifications();
 
     // Check if notifications are enabled
     const userData = await getUserData(userId);
     if (userData?.notificationsEnabled === false) {
       console.log('Notifications are disabled, not scheduling');
+      isScheduling = false;
       return;
     }
 
     // Check if user is awake
     if (userData?.isAwake === false) {
       console.log('User is asleep, not scheduling notification');
+      isScheduling = false;
       return;
     }
 
     // Check if user has uploaded before
     if (!userData?.lastUploadTimestamp) {
       console.log('User has not uploaded yet, not scheduling notification');
+      isScheduling = false;
       return;
     }
 
     const hasPermission = await requestPermissions();
     if (!hasPermission) {
       console.warn('Cannot schedule notification without permission');
+      isScheduling = false;
       return;
     }
 
@@ -130,7 +167,17 @@ export const scheduleNextUploadNotification = async (userId: string): Promise<vo
     // Don't schedule if the time has already passed
     if (nextNotificationTime.getTime() <= Date.now()) {
       console.log('Next upload time has already passed, not scheduling');
+      isScheduling = false;
       return;
+    }
+
+    // Double-check: Cancel any remaining notifications before scheduling
+    const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notification of allScheduled) {
+      if (notification.content?.data?.type === 'upload_interval' || notification.content?.data?.type === 'hourly') {
+        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        console.log('Cancelled duplicate notification:', notification.identifier);
+      }
     }
 
     const intervalText = intervalHours === 1 ? 'hour' : `${intervalHours} hours`;
@@ -151,11 +198,13 @@ export const scheduleNextUploadNotification = async (userId: string): Promise<vo
     console.log(`Scheduled next upload notification for ${nextNotificationTime.toISOString()}`);
   } catch (error) {
     console.error('Error scheduling next upload notification:', error);
+  } finally {
+    isScheduling = false;
   }
 };
 
 /**
- * Cancel all scheduled hourly notifications
+ * Cancel all scheduled hourly and upload interval notifications
  */
 export const cancelHourlyNotifications = async (): Promise<void> => {
   try {
@@ -164,19 +213,34 @@ export const cancelHourlyNotifications = async (): Promise<void> => {
     
     // Cancel all tracked notifications
     for (const notificationId of scheduledNotificationIds) {
-      await Notifications.cancelScheduledNotificationAsync(notificationId);
+      try {
+        await Notifications.cancelScheduledNotificationAsync(notificationId);
+      } catch (error) {
+        // Notification might already be cancelled, ignore error
+        console.log('Notification already cancelled or not found:', notificationId);
+      }
     }
     
-    // IMPORTANT: Also cancel ALL notifications from the system that have type 'hourly'
-    // This ensures we cancel hourly notifications even if old code scheduled them
+    // IMPORTANT: Cancel ALL notifications from the system that have type 'hourly' OR 'upload_interval'
+    // This ensures we cancel all upload-related notifications, even if old code scheduled them
+    let cancelledCount = 0;
     for (const notification of allScheduled) {
-      if (notification.content?.data?.type === 'hourly') {
-        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+      const notificationType = notification.content?.data?.type;
+      if (notificationType === 'hourly' || notificationType === 'upload_interval') {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+          cancelledCount++;
+        } catch (error) {
+          // Notification might already be cancelled, ignore error
+          console.log('Error cancelling notification:', notification.identifier);
+        }
       }
     }
     
     scheduledNotificationIds = [];
-    console.log('Cancelled all hourly notifications');
+    if (cancelledCount > 0) {
+      console.log(`Cancelled ${cancelledCount} upload interval notification(s)`);
+    }
   } catch (error) {
     console.error('Error cancelling hourly notifications:', error);
   }
@@ -190,7 +254,7 @@ export const sendPartnerUpdateNotification = async (partnerName?: string): Promi
   try {
     const hasPermission = await requestPermissions();
     if (!hasPermission) {
-      console.warn('Cannot send notification without permission');
+      console.warn('Cannot send local notification without permission');
       return;
     }
 
@@ -206,9 +270,13 @@ export const sendPartnerUpdateNotification = async (partnerName?: string): Promi
       data: { type: 'partner_update' },
     });
 
-    console.log('Sent partner update notification');
-  } catch (error) {
-    console.error('Error sending partner update notification:', error);
+    console.log('Local partner update notification sent successfully');
+  } catch (error: any) {
+    console.error('Error sending local partner update notification:', {
+      error: error.message || error,
+      stack: error.stack,
+      platform: Platform.OS,
+    });
   }
 };
 
@@ -271,32 +339,51 @@ export const registerForPushNotifications = async (userId: string): Promise<stri
   try {
     // Check if running on a physical device (if expo-device is available)
     if (Device && !Device.isDevice) {
-      console.warn('Push notifications only work on physical devices');
+      console.warn('Push notifications only work on physical devices, not simulators/emulators');
       return null;
     }
 
     // Request permissions
     const hasPermission = await requestPermissions();
     if (!hasPermission) {
-      console.warn('Notification permissions not granted');
+      console.warn('Cannot register for push notifications without permission');
       return null;
     }
 
     // Get the push token
+    console.log('Requesting Expo push token...');
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: '2e9bb7e4-8905-4a69-b4de-2eae549fdfbe', // From app.json extra.eas.projectId
     });
     const pushToken = tokenData.data;
 
+    if (!pushToken) {
+      console.error('Failed to get push token - token data is empty');
+      return null;
+    }
+
+    console.log(`Push token received (${pushToken.substring(0, 20)}...)`);
+
     // Save token to Firestore
-    if (pushToken) {
+    try {
       await savePushToken(userId, pushToken);
-      console.log('Push token registered and saved:', pushToken);
+      console.log('Push token saved to Firestore successfully');
+    } catch (saveError: any) {
+      console.error('Error saving push token to Firestore:', {
+        error: saveError.message || saveError,
+        userId,
+      });
+      // Still return the token even if saving fails - token is valid
     }
 
     return pushToken;
   } catch (error: any) {
-    console.error('Error registering for push notifications:', error);
+    console.error('Error registering for push notifications:', {
+      error: error.message || error,
+      stack: error.stack,
+      platform: Platform.OS,
+      userId,
+    });
     return null;
   }
 };
@@ -312,9 +399,35 @@ export const sendPushNotificationToPartner = async (
   partnerName?: string
 ): Promise<void> => {
   try {
+    // Ensure Android notification channel is set up before sending
+    if (Platform.OS === 'android') {
+      await requestPermissions(); // This will set up the channel if it doesn't exist
+    }
+
     const title = partnerName 
       ? `New Update from ${partnerName}! 💕`
       : 'New Update from Partner! 💕';
+
+    // Build notification payload
+    const notificationPayload: any = {
+      to: partnerPushToken,
+      sound: 'default',
+      title: title,
+      body: 'Your partner just shared a new photo',
+      data: { type: 'partner_update' },
+      priority: 'high',
+    };
+
+    // Add Android-specific fields
+    if (Platform.OS === 'android') {
+      notificationPayload.channelId = 'default';
+    }
+
+    console.log(`Sending push notification to partner (${Platform.OS}):`, {
+      token: partnerPushToken.substring(0, 20) + '...',
+      title,
+      channelId: Platform.OS === 'android' ? 'default' : undefined,
+    });
 
     // Send push notification via Expo's API
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -324,24 +437,41 @@ export const sendPushNotificationToPartner = async (
         'Accept-Encoding': 'gzip, deflate',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        to: partnerPushToken,
-        sound: 'default',
-        title: title,
-        body: 'Your partner just shared a new photo',
-        data: { type: 'partner_update' },
-        priority: 'high',
-      }),
+      body: JSON.stringify(notificationPayload),
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Push notification API error (${response.status}):`, errorText);
+      throw new Error(`Failed to send push notification: ${response.status} ${errorText}`);
+    }
+
     const result = await response.json();
-    if (result.data?.status === 'ok') {
-      console.log('Push notification sent successfully');
+    
+    // Check response structure - Expo API can return data as array or object
+    const notifications = Array.isArray(result.data) ? result.data : [result.data];
+    const allSuccessful = notifications.every((item: any) => item?.status === 'ok');
+    
+    if (allSuccessful) {
+      console.log('Push notification sent successfully to partner');
     } else {
-      console.error('Failed to send push notification:', result);
+      const errors = notifications
+        .filter((item: any) => item?.status !== 'ok')
+        .map((item: any) => item?.message || item?.status)
+        .join(', ');
+      console.error('Failed to send push notification:', {
+        result,
+        errors,
+      });
+      throw new Error(`Push notification delivery failed: ${errors}`);
     }
   } catch (error: any) {
-    console.error('Error sending push notification:', error);
+    console.error('Error sending push notification to partner:', {
+      error: error.message || error,
+      stack: error.stack,
+      platform: Platform.OS,
+    });
+    // Don't throw - we don't want to fail the upload if notification fails
   }
 };
 

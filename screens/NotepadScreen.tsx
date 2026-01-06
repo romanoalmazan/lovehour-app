@@ -37,6 +37,7 @@ const NotepadScreen: React.FC = () => {
   const [userGenders, setUserGenders] = useState<{ [uid: string]: 'male' | 'female' | 'other' }>({});
   const [currentUserGender, setCurrentUserGender] = useState<'male' | 'female' | 'other' | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const textInputRef = useRef<TextInput>(null);
 
   // Get partner ID, current user gender, and set up real-time subscription
   useEffect(() => {
@@ -208,6 +209,13 @@ const NotepadScreen: React.FC = () => {
 
         setSaving(false);
         saveTimeoutRef.current = null;
+        
+        // Maintain focus on TextInput after save (use setTimeout to ensure it happens after render)
+        setTimeout(() => {
+          if (textInputRef.current) {
+            textInputRef.current.focus();
+          }
+        }, 0);
       }, 1500);
     },
     [user, partnerId, selectedNoteId]
@@ -473,6 +481,7 @@ const NotepadScreen: React.FC = () => {
         {selectedNote ? (
           <View style={styles.inputContainer}>
             <TextInput
+              ref={textInputRef}
               style={[styles.textInput, { color: textColor }]}
               value={localContent}
               onChangeText={handleContentChange}
@@ -480,7 +489,8 @@ const NotepadScreen: React.FC = () => {
               placeholderTextColor="#999"
               multiline
               textAlignVertical="top"
-              editable={!saving}
+              editable={true}
+              blurOnSubmit={false}
             />
           </View>
         ) : notes.length === 0 ? (

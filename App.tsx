@@ -3,7 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View, StyleSheet, Image } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Image, Platform } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AuthScreen from './screens/AuthScreen';
@@ -21,6 +22,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 
 const BottomTabNavigator: React.FC = () => {
+  const insets = useSafeAreaInsets();
+  
   return (
     <Tab.Navigator
       screenOptions={{
@@ -31,9 +34,9 @@ const BottomTabNavigator: React.FC = () => {
           backgroundColor: '#ffe6d5',
           borderTopWidth: 2,
           borderTopColor: '#D4A574',
-          paddingBottom: 5,
+          paddingBottom: Math.max(insets.bottom, 5),
           paddingTop: 5,
-          height: 60,
+          height: 60 + Math.max(insets.bottom - 5, 0),
         },
         tabBarLabelStyle: {
           fontSize: 14,
@@ -60,10 +63,10 @@ const BottomTabNavigator: React.FC = () => {
         }}
       />
       <Tab.Screen 
-        name="Notepad" 
+        name="LoveNote" 
         component={NotepadScreen}
         options={{
-          tabBarLabel: 'Notepad',
+          tabBarLabel: 'LoveNote',
           tabBarIcon: ({ focused, color, size }) => (
             <Image
               source={require('./components/images/notestab.png')}
@@ -158,6 +161,31 @@ const App: React.FC = () => {
   const notificationListener = useRef<Notifications.Subscription>();
   const responseListener = useRef<Notifications.Subscription>();
 
+  // Set up Android notification channel early in app lifecycle
+  useEffect(() => {
+    const setupAndroidChannel = async () => {
+      if (Platform.OS === 'android') {
+        try {
+          await Notifications.setNotificationChannelAsync('default', {
+            name: 'Default',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+            sound: 'default',
+            showBadge: true,
+            enableVibrate: true,
+            enableLights: true,
+          });
+          console.log('Android notification channel set up successfully');
+        } catch (error) {
+          console.error('Error setting up Android notification channel:', error);
+        }
+      }
+    };
+
+    setupAndroidChannel();
+  }, []);
+
   useEffect(() => {
     // Set up notification received handler (when app is in foreground)
     notificationListener.current = Notifications.addNotificationReceivedListener((notification: Notifications.Notification) => {
@@ -192,10 +220,12 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <AuthProvider>
-      <StatusBar style="auto" />
-      <AppNavigator />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <StatusBar style="auto" />
+        <AppNavigator />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 };
 
