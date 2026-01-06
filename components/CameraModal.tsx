@@ -118,12 +118,13 @@ const CameraModal: React.FC<CameraModalProps> = ({ visible, onClose, onCapture }
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.container}>
-        <CameraView
-          ref={cameraRef}
-          style={styles.camera}
-          facing={facing}
-        >
-          <View style={styles.overlay}>
+        <View style={styles.cameraContainer}>
+          <CameraView
+            ref={cameraRef}
+            style={styles.camera}
+            facing={facing}
+          >
+            <View style={styles.overlay}>
             {/* Top bar with close button */}
             <View style={styles.topBar}>
               <TouchableOpacity
@@ -165,6 +166,7 @@ const CameraModal: React.FC<CameraModalProps> = ({ visible, onClose, onCapture }
             </View>
           </View>
         </CameraView>
+        </View>
       </View>
     </Modal>
   );
@@ -174,9 +176,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraContainer: {
+    width: '100%',
+    aspectRatio: 9 / 16, // 9:16 ratio (1080x1920)
+    maxWidth: width,
+    maxHeight: height * 0.9, // Leave some space for controls
   },
   camera: {
     flex: 1,
+    width: '100%',
+    height: '100%',
   },
   overlay: {
     flex: 1,

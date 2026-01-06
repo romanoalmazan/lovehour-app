@@ -336,6 +336,9 @@ const LoveHourScreen: React.FC = () => {
   
   // Camera modal state
   const [cameraModalVisible, setCameraModalVisible] = useState(false);
+  
+  // Image dimensions for preview
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
 
   // Hourly upload system state
   const [isAwake, setIsAwake] = useState<boolean | null>(null);
@@ -528,6 +531,19 @@ const LoveHourScreen: React.FC = () => {
     setSelectedImage(imageUri);
     setUploadStatus('');
     setCaption('');
+    setImageDimensions(null); // Reset dimensions when new image is selected
+    
+    // Get image dimensions to adjust container
+    Image.getSize(
+      imageUri,
+      (width, height) => {
+        setImageDimensions({ width, height });
+      },
+      (error) => {
+        console.error('Error getting image size:', error);
+      }
+    );
+    
     setUploadModalVisible(true);
   };
 
@@ -829,15 +845,16 @@ const LoveHourScreen: React.FC = () => {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.uploadModalOverlay}>
-              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                <ScrollView
-                  style={styles.uploadModalScrollView}
-                  contentContainerStyle={styles.uploadModalContent}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={true}
-                >
+          <View style={styles.uploadModalOverlay}>
+            <ScrollView
+              style={styles.uploadModalScrollView}
+              contentContainerStyle={styles.uploadModalContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+            >
                   <View style={styles.uploadModalHeader}>
                     <Text style={styles.uploadModalTitle}>
                       {uploadType === 'goodnight' 
@@ -847,13 +864,14 @@ const LoveHourScreen: React.FC = () => {
                         : 'Send Update'}
                     </Text>
                     <TouchableOpacity
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        setUploadModalVisible(false);
-                        setSelectedImage(null);
-                        setCaption('');
-                        setUploadType('regular');
-                      }}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setUploadModalVisible(false);
+                      setSelectedImage(null);
+                      setCaption('');
+                      setUploadType('regular');
+                      setImageDimensions(null);
+                    }}
                     >
                       <Text style={styles.uploadModalClose}>✕</Text>
                     </TouchableOpacity>
@@ -862,7 +880,21 @@ const LoveHourScreen: React.FC = () => {
                   {selectedImage && (
                     <>
                       <View style={styles.uploadImagePreviewContainer}>
-                        <Image source={{ uri: selectedImage }} style={styles.uploadImagePreview} />
+                        <View style={[
+                          styles.imageWrapper,
+                          imageDimensions && {
+                            aspectRatio: imageDimensions.width / imageDimensions.height,
+                            maxHeight: 500,
+                          }
+                        ]}>
+                          <Image 
+                            source={{ uri: selectedImage }} 
+                            style={styles.uploadImagePreview}
+                            resizeMode="cover"
+                            progressiveRenderingEnabled={true}
+                            cache="force-cache"
+                          />
+                        </View>
                         <TouchableOpacity
                           style={styles.changeImageButton}
                           onPress={() => pickImage(uploadType)}
@@ -914,9 +946,7 @@ const LoveHourScreen: React.FC = () => {
                     </>
                   )}
                 </ScrollView>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1389,6 +1419,7 @@ const styles = StyleSheet.create({
   },
   uploadModalScrollView: {
     maxHeight: '90%',
+    flexGrow: 1,
   },
   uploadModalContent: {
     backgroundColor: '#ffe6d5',
@@ -1396,6 +1427,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 24,
     paddingBottom: 40,
+    flexGrow: 1,
   },
   uploadModalHeader: {
     flexDirection: 'row',
@@ -1416,16 +1448,28 @@ const styles = StyleSheet.create({
   },
   uploadImagePreviewContainer: {
     marginBottom: 20,
+    alignItems: 'center',
   },
-  uploadImagePreview: {
+  imageWrapper: {
     width: '100%',
-    height: 250,
+    minHeight: 200,
+    maxHeight: 500,
     borderRadius: 12,
-    resizeMode: 'cover',
-    marginBottom: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderWidth: 2,
     borderColor: '#D4A574',
+    marginBottom: 12,
+    overflow: 'hidden',
+    alignSelf: 'center',
+  },
+  uploadImagePreview: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
   changeImageButton: {
     paddingVertical: 10,
