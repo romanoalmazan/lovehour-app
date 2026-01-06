@@ -47,6 +47,7 @@ export interface UserData {
   lastGoodmorningTime?: any | null;
   pushToken?: string | null; // Expo push notification token
   notificationsEnabled?: boolean; // Whether notifications are enabled
+  profilePictureUrl?: string | null; // URL of user's profile picture
 }
 
 export interface Photo {
@@ -630,6 +631,94 @@ export const uploadUserImage = async (
     return {
       success: false,
       error: error.message || 'Failed to upload image'
+    };
+  }
+};
+
+/**
+ * Upload profile picture for a user
+ * @param userId - The user ID
+ * @param imageUri - The local URI of the image to upload
+ * @returns Promise with success status, download URL, or error
+ */
+export const uploadProfilePicture = async (
+  userId: string,
+  imageUri: string
+): Promise<{ success: boolean; downloadURL?: string; error?: string }> => {
+  try {
+    // Wait for Firestore to be ready
+    await ensureFirestoreReady();
+
+    // Get current user data to check for existing profile picture
+    const userData = await getUserData(userId);
+    const oldProfilePictureUrl = userData?.profilePictureUrl;
+
+    // 1. Convert URI to Blob
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    // 2. Create a reference to the file in Firebase Storage
+    const timestamp = Date.now();
+    const filename = `users/${userId}/profile/${timestamp}.jpg`;
+    const storageRef = ref(storage, filename);
+
+    // 3. Upload the file
+    const uploadTask = uploadBytesResumable(storageRef, blob);
+
+    // Wait for upload to complete
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          // Progress tracking (optional - can be used for UI)
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Profile picture upload progress:', Math.round(progress) + '%');
+        },
+        (error) => {
+          console.error('Profile picture upload error:', error);
+          reject(error);
+        },
+        async () => {
+          // Upload completed successfully
+          resolve();
+        }
+      );
+    });
+
+    // 4. Get the download URL
+    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+    // 5. Update user document with new profile picture URL
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      profilePictureUrl: downloadURL
+    });
+
+    // 6. Delete old profile picture from storage if it exists
+    if (oldProfilePictureUrl) {
+      try {
+        // Extract the path from the old URL
+        // Firebase Storage URLs are in format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token={token}
+        const urlParts = oldProfilePictureUrl.split('/o/');
+        if (urlParts.length > 1) {
+          const pathWithQuery = urlParts[1].split('?')[0];
+          const decodedPath = decodeURIComponent(pathWithQuery);
+          const oldStorageRef = ref(storage, decodedPath);
+          await deleteObject(oldStorageRef);
+          console.log('Old profile picture deleted successfully');
+        }
+      } catch (deleteError) {
+        // Don't fail the upload if old picture deletion fails
+        console.warn('Error deleting old profile picture:', deleteError);
+      }
+    }
+
+    return { success: true, downloadURL };
+  } catch (error: any) {
+    console.error('Error uploading profile picture:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to upload profile picture'
     };
   }
 };

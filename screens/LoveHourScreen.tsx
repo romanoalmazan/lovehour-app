@@ -340,6 +340,9 @@ const LoveHourScreen: React.FC = () => {
   // Image dimensions for preview
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
 
+  // User data for profile picture
+  const [userData, setUserData] = useState<any>(null);
+
   // Hourly upload system state
   const [isAwake, setIsAwake] = useState<boolean | null>(null);
   const [canUpload, setCanUpload] = useState(true);
@@ -452,6 +455,8 @@ const LoveHourScreen: React.FC = () => {
 
     const unsubscribe = subscribeToUserData(user.uid, (userData) => {
       if (userData) {
+        // Store userData for profile picture
+        setUserData(userData);
         // Update awake status (default to true if not set)
         const newIsAwake = userData.isAwake !== false;
         setIsAwake(newIsAwake);
@@ -723,9 +728,14 @@ const LoveHourScreen: React.FC = () => {
               activeOpacity={0.8}
             >
               <Image
-                source={require('../components/images/profile.png')}
+                source={
+                  userData?.profilePictureUrl
+                    ? { uri: userData.profilePictureUrl }
+                    : require('../components/images/profile.png')
+                }
                 style={styles.profileIcon}
-                resizeMode="contain"
+                resizeMode="cover"
+                defaultSource={require('../components/images/profile.png')}
               />
             </TouchableOpacity>
           </View>
@@ -1129,6 +1139,9 @@ const styles = StyleSheet.create({
   profileIcon: {
     width: 24,
     height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D4A574',
   },
   subtitle: {
     fontSize: 20,

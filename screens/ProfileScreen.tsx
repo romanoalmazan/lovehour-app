@@ -8,13 +8,17 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
+  Modal,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
-import { getUserData, verifyMutualMatch, UserData, updateUploadInterval, updateNotificationPreference } from '../services/userService';
+import { getUserData, verifyMutualMatch, UserData, updateUploadInterval, updateNotificationPreference, uploadProfilePicture } from '../services/userService';
 import { cancelHourlyNotifications, scheduleNextUploadNotification } from '../services/notificationService';
 import { RootStackParamList } from '../types/navigation';
+import CameraModal from '../components/CameraModal';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
 
@@ -80,6 +84,11 @@ const ProfileScreen: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
   const [savingNotifications, setSavingNotifications] = useState(false);
+  
+  // Profile picture state
+  const [profilePicturePickerVisible, setProfilePicturePickerVisible] = useState(false);
+  const [uploadingProfilePicture, setUploadingProfilePicture] = useState(false);
+  const [cameraModalVisible, setCameraModalVisible] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -174,6 +183,29 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  const handleProfilePictureUpload = async (imageUri: string) => {
+    if (!user) return;
+
+    setUploadingProfilePicture(true);
+    try {
+      const result = await uploadProfilePicture(user.uid, imageUri);
+      
+      if (result.success) {
+        // Reload user data to get updated profile picture URL
+        const updatedUserData = await getUserData(user.uid);
+        setUserData(updatedUserData);
+        Alert.alert('Success', 'Profile picture updated successfully!');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to upload profile picture. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error uploading profile picture:', error);
+      Alert.alert('Error', error.message || 'Failed to upload profile picture. Please try again.');
+    } finally {
+      setUploadingProfilePicture(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -208,7 +240,27 @@ const ProfileScreen: React.FC = () => {
         <View style={styles.profileSection}>
           <Text style={styles.sectionLabel}>Your Name</Text>
           <View style={styles.nameCard}>
-            <Text style={styles.nameText}>{userName}</Text>
+            <View style={styles.nameCardContent}>
+              <Image
+                source={
+                  userData?.profilePictureUrl
+                    ? { uri: userData.profilePictureUrl }
+                    : require('../components/images/profile.png')
+                }
+                style={styles.profilePicture}
+                defaultSource={require('../components/images/profile.png')}
+              />
+              <View style={styles.nameTextContainer}>
+                <Text style={styles.nameText}>{userName}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.editProfileButton}
+                onPress={() => setProfilePicturePickerVisible(true)}
+                disabled={uploadingProfilePicture}
+              >
+                <Text style={styles.editProfileButtonText}>✏️</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -216,7 +268,20 @@ const ProfileScreen: React.FC = () => {
           <Text style={styles.sectionLabel}>Matched With</Text>
           <View style={styles.nameCard}>
             {partnerName ? (
-              <Text style={styles.nameText}>{partnerName}</Text>
+              <View style={styles.nameCardContent}>
+                <Image
+                  source={
+                    partnerData?.profilePictureUrl
+                      ? { uri: partnerData.profilePictureUrl }
+                      : require('../components/images/profile.png')
+                  }
+                  style={styles.profilePicture}
+                  defaultSource={require('../components/images/profile.png')}
+                />
+                <View style={styles.nameTextContainer}>
+                  <Text style={styles.nameText}>{partnerName}</Text>
+                </View>
+              </View>
             ) : (
               <Text style={styles.noMatchText}>Not matched</Text>
             )}
@@ -309,6 +374,78 @@ const ProfileScreen: React.FC = () => {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Profile Picture Picker Modal */}
+      <Modal
+        visible={profilePicturePickerVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setProfilePicturePickerVisible(false)}
+      >
+        <View style={styles.pickerModalOverlay}>
+          <View style={styles.pickerModalContent}>
+            <Text style={styles.pickerModalTitle}>Change Profile Picture</Text>
+            
+            <TouchableOpacity
+              style={styles.pickerOption}
+              onPress={async () => {
+                setProfilePicturePickerVisible(false);
+                setCameraModalVisible(true);
+              }}
+              disabled={uploadingProfilePicture}
+            >
+              <Text style={styles.pickerOptionText}>📷 Take Photo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.pickerOption}
+              onPress={async () => {
+                setProfilePicturePickerVisible(false);
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert(
+                    'Permission Required',
+                    'Sorry, we need camera roll permissions to select photos!'
+                  );
+                  return;
+                }
+
+                const result = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  allowsEditing: true,
+                  aspect: [1, 1],
+                  quality: 0.8,
+                });
+
+                if (!result.canceled && result.assets[0]) {
+                  await handleProfilePictureUpload(result.assets[0].uri);
+                }
+              }}
+              disabled={uploadingProfilePicture}
+            >
+              <Text style={styles.pickerOptionText}>🖼️ Choose from Library</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.pickerOption, styles.pickerCancel]}
+              onPress={() => setProfilePicturePickerVisible(false)}
+              disabled={uploadingProfilePicture}
+            >
+              <Text style={styles.pickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Camera Modal */}
+      <CameraModal
+        visible={cameraModalVisible}
+        onClose={() => setCameraModalVisible(false)}
+        onCapture={async (imageUri) => {
+          setCameraModalVisible(false);
+          await handleProfilePictureUpload(imageUri);
+        }}
+      />
     </View>
   );
 };
@@ -390,10 +527,36 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginTop: 4,
   },
+  nameCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  profilePicture: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+  },
+  nameTextContainer: {
+    flex: 1,
+  },
   nameText: {
     fontSize: 20,
     fontWeight: '600',
     color: '#8B6F47',
+  },
+  editProfileButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#D4A574',
+    minWidth: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileButtonText: {
+    fontSize: 18,
   },
   noMatchText: {
     fontSize: 18,
@@ -577,6 +740,52 @@ const styles = StyleSheet.create({
     color: '#8B6F47',
     fontSize: 16,
     fontWeight: '700',
+  },
+  pickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pickerModalContent: {
+    backgroundColor: '#ffe6d5',
+    borderRadius: 20,
+    padding: 24,
+    width: '80%',
+    maxWidth: 400,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+  },
+  pickerModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#8B6F47',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  pickerOption: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#D4A574',
+    alignItems: 'center',
+  },
+  pickerOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#8B6F47',
+  },
+  pickerCancel: {
+    backgroundColor: 'transparent',
+    borderColor: '#8B6F47',
+    marginTop: 8,
+  },
+  pickerCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#8B6F47',
   },
 });
 
